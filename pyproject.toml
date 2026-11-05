@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "numerario"
+version = "0.1.0"
+description = "Previsão e otimização estocástica da cadeia de suprimento de numerário em ATMs (MILP multiescalão + Chronos-2 + simulação rolante)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Thiago Bibiano da Silva" }]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "scipy>=1.11",
+  "pyarrow>=14",
+  "matplotlib>=3.8",
+  "pulp>=2.8",
+  "highspy>=1.7",
+]
+
+[project.optional-dependencies]
+chronos = ["chronos-forecasting>=2.3,<3", "torch>=2.2"]
+dev = ["pytest>=8", "nbformat>=5", "nbclient>=0.10", "ipykernel>=6", "holidays>=0.50"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
