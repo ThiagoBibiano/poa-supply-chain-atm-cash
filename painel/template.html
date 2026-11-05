@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Painel da Cadeia de Numerário</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* A cor é dos dados; a interface é tinta e superfície. Escala divergente única: vermelho = lado da falta, azul = lado do excesso. */
+:root{
+  --bg:#f2f3f0; --surface:#fcfcfb; --surface-2:#e9ebe6; --ink:#121411; --ink-2:#4a4d47; --muted:#7a7d76;
+  --line:#dcded7; --axis:#c2c4bb; --ring:#fcfcfb; --good-text:#006300; --bad-text:#b42318;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300;
+  --dn2:#e34948; --dn1:#f1a7a6; --dm:#e3e2dc; --dp1:#9ec5f4; --dp2:#2a78d6;
+  --crit:#d03b3b; --warn:#fab219;
+  --font-ui:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e0f0e; --surface:#1a1a19; --surface-2:#252624; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#8e9088;
+    --line:#2e2f2c; --axis:#464742; --ring:#1a1a19; --good-text:#0ca30c; --bad-text:#f97066;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300;
+    --dn2:#e66767; --dn1:#7c3534; --dm:#3a3a37; --dp1:#22528c; --dp2:#3987e5;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e0f0e; --surface:#1a1a19; --surface-2:#252624; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#8e9088;
+  --line:#2e2f2c; --axis:#464742; --ring:#1a1a19; --good-text:#0ca30c; --bad-text:#f97066;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300;
+  --dn2:#e66767; --dn1:#7c3534; --dm:#3a3a37; --dp1:#22528c; --dp2:#3987e5;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--font-ui);}
+.wrap{max-width:1200px;margin:0 auto;padding-block:32px 72px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:28px}
+h1,h2,h3{text-wrap:balance;margin:0;font-weight:600;letter-spacing:-0.01em}
+h1{font-size:30px;line-height:1.15}
+h2{font-size:21px;line-height:1.25}
+h3{font-size:16px}
+p{margin:0}
+.mono{font-family:var(--font-mono)}
+.eyebrow{font:500 11.5px/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lead{max-width:72ch;color:var(--ink-2);font-size:16px}
+.note{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--ink-2);background:var(--surface-2);border-radius:6px;padding:6px 10px;width:fit-content;flex-wrap:wrap}
+.note b{font-weight:600;color:var(--ink)}
+.note.alerta{background:color-mix(in srgb,var(--warn) 25%,var(--surface))}
+header.top{display:flex;flex-direction:column;gap:12px}
+.toolbar{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.ctl{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ctl > .lab{font:500 11px/1 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.seg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--surface-2)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{padding:6px 10px;font-size:13px;cursor:pointer;color:var(--ink-2);border-right:1px solid var(--line);white-space:nowrap}
+.seg label:last-child{border-right:0}
+.seg input:checked + label{background:var(--ink);color:var(--surface);}
+.seg input:focus-visible + label{outline:2px solid var(--s1);outline-offset:-2px}
+.dayctl{display:flex;align-items:center;gap:8px}
+.dayctl button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:6px;width:30px;height:30px;cursor:pointer}
+.dayctl button:focus-visible{outline:2px solid var(--s1)}
+.dayctl input[type=range]{width:200px;accent-color:var(--ink)}
+.daylbl{font:500 14px/1 var(--font-mono);min-width:92px}
+.macro{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,2fr);gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px}
+.hero .lab,.tile .lab{font-size:12.5px;color:var(--ink-2)}
+.hero .val{font-size:44px;font-weight:600;line-height:1.1;margin-top:4px}
+.hero .delta{font-size:13px;margin-top:4px;color:var(--ink-2)}
+.delta.good{color:var(--good-text)}
+.delta.bad{color:var(--bad-text)}
+.segbar{display:flex;gap:2px;height:28px;margin-top:16px}
+.segbar div{border-radius:4px;display:flex;align-items:center;padding-left:6px;font:500 11.5px/1 var(--font-mono);color:#fff;overflow:visible;white-space:nowrap}
+.segbar div.dk{color:#0b0b0b}
+.seglegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12.5px;color:var(--ink-2)}
+.seglegend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.tile{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile .val{font-size:22px;font-weight:600}
+.tile .sub{font-size:12.5px;color:var(--muted)}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.mapcard{padding:12px 12px 14px}
+.maphead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;padding:4px 6px 8px}
+.maphead .t{font-weight:600}
+.maphead .s{font-size:13px;color:var(--muted)}
+.mapbox{overflow-x:auto}
+#map{display:block;width:100%;min-width:740px;height:auto}
+#map .node{cursor:pointer}
+#map .node:focus{outline:none}
+#map .node:focus-visible .focusring{stroke:var(--s1);stroke-width:2}
+#map text{font-family:var(--font-ui)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;padding:10px 6px 0;font-size:12.5px;color:var(--ink-2);border-top:1px solid var(--line);margin-top:6px}
+.legend .grp{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.legend .gt{font:500 11px/1 var(--font-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.legend span.it{display:inline-flex;align-items:center;gap:6px}
+.edgekey{width:26px;height:10px;display:inline-block}
+.insp{display:flex;flex-direction:column;gap:14px}
+.insp .hd{display:flex;flex-direction:column;gap:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;font:500 11px/1 var(--font-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);background:var(--surface-2);border-radius:4px;padding:4px 6px;width:fit-content}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px;margin:0}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.sect{display:flex;flex-direction:column;gap:6px}
+.sect .st{font:500 11px/1 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.decbox{font-size:13px;background:var(--surface-2);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.decbox .chg{font-weight:600}
+.model{display:flex;flex-wrap:wrap;gap:4px}
+.model span{font:12px/1 var(--font-mono);border:1px solid var(--line);border-radius:4px;padding:4px 6px;color:var(--ink-2)}
+.model span.r{background:var(--surface-2)}
+.minichart svg{display:block;width:100%;height:auto}
+.minichart .cap{font-size:12px;color:var(--muted)}
+.minileg{display:flex;gap:12px;font-size:12px;color:var(--ink-2);flex-wrap:wrap}
+.minileg span{display:inline-flex;gap:6px;align-items:center}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 11px/1.3 var(--font-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--surface);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.sel td{background:var(--surface-2)}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--surface-2)}
+.tag{display:inline-block;font:500 11px/1 var(--font-mono);padding:3px 6px;border-radius:4px;background:var(--surface-2);color:var(--ink);white-space:nowrap}
+.ok{color:var(--good-text);font-weight:600}
+.nok{color:var(--bad-text);font-weight:600}
+.logctl{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px;color:var(--ink-2)}
+.logctl label{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.logscroll{max-height:340px;overflow:auto}
+details.tbl{font-size:13px}
+details.tbl summary{cursor:pointer;color:var(--ink-2);padding:8px 2px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.panel{display:flex;flex-direction:column;gap:10px;min-width:0}
+.panel .ph{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.panel .ph .t{font-weight:600}
+.panel .ph .s{font-size:12.5px;color:var(--muted)}
+.chart svg{display:block;width:100%;height:auto}
+.spec{display:flex;flex-direction:column;gap:30px;margin-top:8px}
+.spec section{display:flex;flex-direction:column;gap:12px}
+.spec section > p, .spec section > ul{max-width:76ch;color:var(--ink-2)}
+.spec ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.formula{font-family:var(--font-ui);font-size:15px;line-height:2;background:var(--surface-2);border-radius:8px;padding:12px 16px;overflow-x:auto;color:var(--ink)}
+.formula.sm{font-size:12.5px;line-height:1.7;padding:8px 10px}
+.formula i{font-style:italic}
+.formula .lbl{font:500 11px/1 var(--font-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:block;margin-top:10px}
+.formula .lbl:first-child{margin-top:0}
+#tip{position:fixed;z-index:20;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:12.5px;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.12);max-width:280px}
+#tip b{font-weight:600}
+@media (max-width: 980px){ .stage{grid-template-columns:minmax(0,1fr)} .macro{grid-template-columns:minmax(0,1fr)} }
+@media (max-width: 560px){ .tiles{grid-template-columns:repeat(2,minmax(0,1fr))} h1{font-size:25px} .hero .val{font-size:36px} .dayctl input[type=range]{width:120px} }
+@media (prefers-reduced-motion: no-preference){ #map .edge{transition:opacity .2s} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow" id="eyebrow">Pesquisa Operacional Aplicada · UFABC</span>
+    <h1>Painel da cadeia de numerário</h1>
+    <p class="lead">Backtest em horizonte rolante do suprimento e recolhimento de numerário, da custódia do BC até o ATM: o estado de cada elo em cada dia, onde o dinheiro está, o que foi previsto, o que aconteceu, quanto o erro de previsão custou nas duas direções e quais decisões o replanejamento mudou. Dados gerados pelo notebook; a página só lê resultados.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap" id="notas"></div>
+  </header>
+
+  <div class="toolbar" role="group" aria-label="Filtros do painel">
+    <div class="ctl"><span class="lab" id="lab-pol">Política</span><div class="seg" role="radiogroup" aria-labelledby="lab-pol" id="pol"></div></div>
+    <div class="ctl"><span class="lab">Dia</span>
+      <div class="dayctl">
+        <button type="button" id="prev" aria-label="Dia anterior">‹</button>
+        <input type="range" id="day" min="0" max="1" step="1" value="0" aria-label="Dia do backtest">
+        <button type="button" id="next" aria-label="Próximo dia">›</button>
+        <span class="daylbl" id="daylbl"></span>
+      </div></div>
+    <div class="ctl"><span class="lab" id="lab-layer">Camada do mapa</span><div class="seg" role="radiogroup" aria-labelledby="lab-layer" id="layer"></div></div>
+    <div class="ctl"><span class="lab" id="lab-h">Antecedência da previsão</span><div class="seg" role="radiogroup" aria-labelledby="lab-h" id="hor"></div></div>
+  </div>
+
+  <section class="macro" aria-label="Indicadores do período">
+    <div class="card hero">
+      <div class="lab">Custo total no período · <span id="pol-name"></span></div>
+      <div class="val" id="k-total"></div>
+      <div class="delta" id="k-delta"></div>
+      <div class="segbar" id="k-bar" role="img"></div>
+      <div class="seglegend" id="k-leg"></div>
+    </div>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section class="stage" aria-label="Mapa da cadeia">
+    <div class="card mapcard">
+      <div class="maphead"><span class="t">Mapa da cadeia de suprimento</span><span class="s" id="mapsub"></span></div>
+      <div class="mapbox"><svg id="map" viewBox="0 0 820 560" role="group" aria-label="Mapa da cadeia: custódia, tesouraria central, tesourarias, ATMs internos e externos"></svg></div>
+      <div class="legend" id="legend"></div>
+      <details class="tbl"><summary>Ver o mapa como tabela (dia selecionado)</summary><div class="tablewrap"><table id="daytable"></table></div></details>
+    </div>
+    <aside class="card insp" id="insp" aria-live="polite"></aside>
+  </section>
+
+  <section class="card" style="display:flex;flex-direction:column;gap:12px" aria-label="Mudanças de decisão">
+    <div class="maphead" style="padding:0"><span class="t">Mudanças de decisão no replanejamento</span><span class="s">plano feito com 2–3 dias de antecedência × decisão executada</span></div>
+    <div class="logctl">
+      <label><input type="checkbox" id="f-node"> só o ponto selecionado</label>
+      <label><input type="checkbox" id="f-day"> só o dia selecionado</label>
+      <span id="logcount"></span>
+    </div>
+    <div class="tablewrap logscroll"><table id="logtable"></table></div>
+  </section>
+
+  <section class="card" style="display:flex;flex-direction:column;gap:12px" aria-label="Comparação de políticas">
+    <div class="maphead" style="padding:0"><span class="t">Comparação de políticas no período</span><span class="s">clique numa linha para trocar a política do painel</span></div>
+    <div class="tablewrap"><table id="poltable"></table></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card panel" aria-label="Impacto do erro">
+      <div class="ph"><span class="t">Impacto do erro</span><span class="s" id="err-sub"></span></div>
+      <div class="chart" id="cascata"></div>
+      <div class="tiles" style="grid-template-columns:repeat(2,minmax(0,1fr))" id="vss"></div>
+      <div class="sect"><span class="st">Pontos que mais custaram a mais que o oráculo</span><div class="tablewrap"><table id="topcost"></table></div></div>
+    </section>
+    <section class="card panel" aria-label="Previsões">
+      <div class="ph"><span class="t">Previsões</span><span class="s" id="prev-sub"></span></div>
+      <div class="chart" id="caudas"></div>
+      <div class="chart" id="pit"></div>
+      <div class="chart" id="porh"></div>
+      <div class="tablewrap"><table id="prevtab"></table></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card panel" aria-label="Rede e centralização">
+      <div class="ph"><span class="t">Rede e centralização</span><span class="s">política selecionada</span></div>
+      <div class="chart" id="niveis"></div>
+      <div class="chart" id="ganho"></div>
+      <div class="chart" id="custodia"></div>
+    </section>
+    <section class="card panel" aria-label="Modelo">
+      <div class="ph"><span class="t">Modelo e solver</span><span class="s" id="mod-sub"></span></div>
+      <div class="chart" id="solver"></div>
+      <div class="chart" id="r5"></div>
+      <div class="sect"><span class="st">Conferências (critérios de aceite)</span><div class="tablewrap"><table id="conf"></table></div></div>
+    </section>
+  </div>
+
+  <section class="card panel" id="sens-card" hidden aria-label="Sensibilidade">
+    <div class="ph"><span class="t">Sensibilidade</span><span class="s">rodadas extras do notebook</span></div>
+    <div class="tablewrap"><table id="senstab"></table></div>
+  </section>
+
+  <div class="spec">
+    <section>
+      <h2>Como ler a página</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Indicador</th><th>Definição</th></tr></thead>
+        <tbody>
+          <tr><td>Cobertura (dias)</td><td>Saldo de fim de dia ÷ média do P50 previsto para os 3 dias seguintes</td></tr>
+          <tr><td>Folga de saldo</td><td>Cobertura − dias até a próxima reposição possível (ATM interno: próximo dia útil do GO; ATM externo: próxima convencional). Negativa = falta provável antes de repor sem especial</td></tr>
+          <tr><td>Erro de previsão</td><td>Saque real − P50, na antecedência escolhida; em % do P50</td></tr>
+          <tr><td>Faixa do real</td><td>Em que faixa de quantis o real caiu: abaixo do P05, P05–P25, P25–P75, P75–P95, acima do P95. Na tesouraria e na central, erro % da demanda agregada (±10% e ±25%)</td></tr>
+          <tr><td>Custo do erro</td><td>Custo da política − custo do oráculo (P4). Lado da falta = especiais + rupturas; lado do excesso = custo de oportunidade + estouros</td></tr>
+          <tr><td>Mudança de decisão</td><td>Para um mesmo ponto e dia-alvo, a decisão planejada antes (D−3 para a transportadora, D−2 para o GO) difere da executada</td></tr>
+          <tr><td>Nível de serviço</td><td>1 − valor não atendido ÷ demanda total dos ATMs</td></tr>
+          <tr><td>Taxa de recirculação</td><td>Recolhimentos processados na central ÷ total despachado pela central</td></tr>
+          <tr><td>Ganho de centralização</td><td>Soma dos estoques de segurança que cada ponto guardaria sozinho − estoque concentrado da central (Eppen, 1979)</td></tr>
+          <tr><td>Saldo parado</td><td>Ponto-dias com cobertura acima de 6 dias</td></tr>
+        </tbody></table></div>
+    </section>
+    <section>
+      <h2>O modelo que atua em cada elo</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Elo</th><th>Variáveis de decisão</th><th>Restrições</th><th>Custos</th></tr></thead>
+        <tbody>
+          <tr><td>Custódia → tesouraria central</td><td class="mono">β<sub>c</sub>, b<sub>c</sub>, δ<sub>c</sub>, g<sub>c</sub></td><td>R11, R13, R9</td><td>K<sup>BC</sup> por remessa; c<sup>BC</sup> por R$ retirado; c<sup>rBC</sup> por R$ devolvido</td></tr>
+          <tr><td>Tesouraria central</td><td class="mono">Z<sub>c</sub>, e<sup>CD</sup><sub>c</sub></td><td>R11, R12, R14</td><td>h · saldo; c<sup>P</sup> · recolhimento processado; p<sup>EM</sup> · abaixo do mínimo</td></tr>
+          <tr><td>Central → tesouraria da agência</td><td class="mono">v<sup>m</sup><sub>b</sub>, x<sup>m</sup><sub>b</sub>, r<sub>b</sub></td><td>R3, R6, R8, R9, R11</td><td>K<sup>C</sup>, K<sup>E</sup> por visita; κ por valor</td></tr>
+          <tr><td>Central → ATM externo</td><td class="mono">v<sup>m</sup><sub>k</sub>, x<sup>m</sup><sub>k</sub>, r<sub>k</sub></td><td>R2, R6, R8, R9, R11</td><td>K<sup>C</sup>, K<sup>E</sup>; κ</td></tr>
+          <tr><td>Tesouraria</td><td class="mono">T<sub>b</sub>, u<sup>T</sup><sub>b</sub>, o<sub>b</sub>, e<sub>b</sub></td><td>R3, R4, R7, R10</td><td>h · saldo; p<sup>o</sup> · excesso; p<sup>T</sup> · falta no guichê; p<sup>EM</sup> · abaixo do mínimo</td></tr>
+          <tr><td>Tesouraria → ATM interno (GO)</td><td class="mono">y<sub>j</sub>, q<sub>j</sub>, s<sub>j</sub></td><td>R1, R4, R5, R6, R9</td><td>c<sup>GO</sup> · θ<sub>j</sub></td></tr>
+          <tr><td>ATM interno / externo</td><td class="mono">I<sub>a</sub>, u<sub>a</sub>, w<sub>a</sub></td><td>R1/R2, R7</td><td>h · saldo; p · falta; p<sub>w</sub> · depósito recusado</td></tr>
+        </tbody></table></div>
+    </section>
+    <section>
+      <h2>Estoque de segurança</h2>
+      <div class="formula">
+        <span class="lbl">Agência · saída diária do cofre</span><i>W</i><sub>b,x</sub> = Σ<sub>j ∈ J<sub>b</sub></sub> Σ<sub>y = x … g(x)−1</sub> <i>D</i><sub>j,y</sub> − <i>F</i><sub>b,x</sub>
+        <span class="lbl">Período de proteção</span>𝒫<sub>b,t</sub> = { t+1, …, a<sub>t</sub> − 1 }, a<sub>t</sub> = 1º dia com transportadora ≥ t + R + L<sub>C</sub>
+        <span class="lbl">Estoque mínimo e ponto de pedido</span><b>EM</b><sub>b,t</sub> = max{ R<sub>b</sub> ; Q<sub>α</sub>(Σ W) − Q<sub>0,5</sub>(Σ W) },&nbsp;&nbsp; <b>PP</b><sub>b,t</sub> = Q<sub>0,5</sub>(Σ W) + EM<sub>b,t</sub>
+        <span class="lbl">Aproximação para conferência</span><b>EM</b> ≈ z<sub>α</sub> √( (1−ρ) Σ σ<sub>i</sub>² + ρ (Σ σ<sub>i</sub>)² ), σ<sub>i</sub> ≈ (Q<sub>0,95</sub> − Q<sub>0,05</sub>) ÷ (2 × 1,645)
+        <span class="lbl">Central · lote de Baumol e faixa de Miller e Orr</span><i>Q</i>* = √( 2 K<sup>BC</sup> W̄ ÷ h ),&nbsp; z = L + (3 K<sup>BC</sup> σ² ÷ 4h)<sup>1/3</sup>,&nbsp; H = 3z − 2L,&nbsp; L = EM<sup>CD</sup>
+        <span class="lbl">Ganho de centralização</span><i>G</i> = Σ<sub>n</sub> EM<sub>n</sub>(sozinho) − EM<sup>CD</sup>
+      </div>
+    </section>
+  </div>
+</div>
+<div id="tip" hidden></div>
+
+<script type="application/json" id="dados">__DADOS_DO_NOTEBOOK__</script>
+<script>
+"use strict";
+/* ================= Dados do notebook ================= */
+let DATA;
+try {
+  DATA = JSON.parse(document.getElementById('dados').textContent);
+} catch (erro) {
+  // o template aberto direto, sem os dados injetados pelo notebook
+  document.body.innerHTML = '<main style="max-width:640px;margin:15vh auto;padding:0 16px;font:16px/1.55 system-ui,sans-serif">'
+    + '<h1 style="font-size:22px;margin:0 0 12px">Painel da cadeia de numerário</h1>'
+    + '<p>Este arquivo é o <b>template</b> do painel. Os dados entram quando o notebook roda '
+    + '(seção 12, <code>art.escrever_painel</code>), que grava <code>painel-numerario.html</code> em <code>05_artefatos/</code>.</p></main>';
+  throw erro;
+}
+const M = DATA.meta, CFG = M.config, DIAS = M.dias, D = DIAS.length;
+const PKEYS = M.politicas.map(p=>p.id);
+const POL = Object.fromEntries(M.politicas.map(p=>[p.id,p]));
+
+/* ================= Utilidades ================= */
+const nf = (v,dig=0)=> (v===null||v===undefined||Number.isNaN(v)) ? '—' : (Object.is(v,-0)?0:v).toLocaleString('pt-BR',{minimumFractionDigits:dig,maximumFractionDigits:dig});
+const fMil = v => (v===null||v===undefined) ? '—' : 'R$ '+nf(Math.round(v))+' mil';
+const fR = v => (v===null||v===undefined) ? '—' : (Math.abs(v)>=1000 ? 'R$ '+nf(v/1000,1)+' mil' : 'R$ '+nf(Math.round(v)));
+const fPct = (v,dig=0)=> (v===null||v===undefined||!isFinite(v)) ? '—' : (v>0?'+':v<0?'−':'')+nf(Math.abs(v)*100,dig)+'%';
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const lbl = d => (DIAS[d]||{}).rot || '';
+const isGO = d => !!(DIAS[d]||{}).go;
+const isTransp = d => !!(DIAS[d]||{}).transp;
+const sum = a => a.reduce((x,y)=>x+(y||0),0);
+
+/* ================= Rede ================= */
+const NODES=[], BY={};
+const add = n => { NODES.push(n); BY[n.id]=n; return n; };
+add({id:'BC', tipo:'bc', nome:'Custódia do BC (operada pelo BB)'});
+DATA.pontos.filter(p=>p.tipo!=='bc').forEach(p=>add(Object.assign({}, p)));
+const CD = BY.CD;
+const TES = NODES.filter(n=>n.tipo==='tes'), INTS = NODES.filter(n=>n.tipo==='int'), EXTS = NODES.filter(n=>n.tipo==='ext');
+const ATMS = [...INTS, ...EXTS];
+TES.forEach(t=>{ t.filhos = (t.filhos||[]).map(id=>BY[id]); });
+ATMS.forEach(n=>{ n.real = DATA.real[n.id]; n.indisp = DATA.indisp[n.id]; });
+const QL = DATA.niveis, QI = {}; QL.forEach((q,i)=>QI[q]=i);
+const qkey = q => 'q'+String(Math.round(q*100)).padStart(2,'0');
+// previsão do dia d com antecedência h (origem d − h)
+function fq(n,h,d,q){ const a=DATA.prev[n.id]; if(!a) return null; const r=a[String(h)][d]; return r ? r[QI[qkey(q)]] : null; }
+function grupo(n){ return n.tipo==='tes' ? n.filhos : n.tipo==='cd' ? ATMS : null; }
+function realOf(n,d){ const g=grupo(n); return g ? sum(g.map(j=>j.real[d])) : n.real[d]; }
+function fqAgg(n,h,d,q){ const g=grupo(n); if(!g) return fq(n,h,d,q); let s=0; for(const j of g){ const v=fq(j,h,d,q); if(v===null) return null; s+=v; } return s; }
+
+/* ================= Resultados ================= */
+const S_OF = pk => DATA.estados[pk];
+const K = DATA.kpis;
+const EMF = DATA.em;
+function emInfo(id,d){ const e=EMF[id]; if(!e||e.em[d]===null) return null; const dias=[]; if(e.pini[d]!==null) for(let x=e.pini[d];x<=e.pfim[d];x++) dias.push(x);
+  return {dias, ndias:e.ndias[d], med:e.med[d], em:e.em[d], pp:e.pp[d], emInd:e.ind[d], emCom:e.com[d], emRaw:e.aprox[d], sep:e.sep[d], ganho:e.ganho[d], sepA:e.sepA[d], ganhoA:e.ganhoA[d]}; }
+const emFor = (pk,id,d) => { const v=(DATA.em_usado[pk]||{})[id]; return v ? v[d] : null; };
+const changesOf = pk => DATA.mudancas[pk] || [];
+
+/* ================= Estado da interface ================= */
+const UI={pol: PKEYS.includes('P3')?'P3':PKEYS[0], day:0, layer:'saldo', h:1, sel:null};
+(function pickDefault(){
+  const ch = changesOf(UI.pol).find(c=>c.id.startsWith('E')) || changesOf(UI.pol)[0];
+  UI.sel = ch ? ch.id : (EXTS[0]||TES[0]).id; if(ch) UI.day = ch.d;
+})();
+
+/* ================= Cabeçalho ================= */
+(function header(){
+  document.getElementById('eyebrow').textContent = `Experimento ${M.experimento} · ${M.periodo[0]} a ${M.periodo[1]} · gerado em ${M.gerado_em}`;
+  const notas=[];
+  notas.push(`<span class="note"><b>Previsão:</b> ${esc(M.modelo_previsao)} · H = ${CFG.H} · ${QL.length} quantis</span>`);
+  notas.push(`<span class="note"><b>MILP:</b> ${CFG.S} cenários · α = ${nf(CFG.alfa*100)}% · ρ = ${nf(CFG.rho,2)} · rede ${esc(CFG.configuracao_rede)}</span>`);
+  if(M.aviso) notas.push(`<span class="note alerta"><b>Atenção:</b> ${esc(M.aviso)}</span>`);
+  document.getElementById('notas').innerHTML = notas.join('');
+})();
+
+/* ================= Cores das camadas ================= */
+const DIV = {n2:'var(--dn2)', n1:'var(--dn1)', m:'var(--dm)', p1:'var(--dp1)', p2:'var(--dp2)'};
+function covDays(n,d){ const s=S_OF(UI.pol)[n.id]; let f=0,c=0; for(let h=1;h<=3;h++){ const v=fq(n,h,Math.min(D-1,d+h),.5); if(v!==null){f+=v;c++;} } return c&&f>0 ? s.fim[d]/(f/c) : null; }
+function diasAteRepor(n,d){
+  if(n.tipo==='int'){ let x=d+1; while(x<D && !isGO(x)) x++; return x-d-1; }
+  let a=d+CFG.LC; while(a<D && !isTransp(a)) a++; return a-d-1;
+}
+function folga(n,d){ const c=covDays(n,d); return c===null ? null : c-diasAteRepor(n,d); }
+function clsSaldo(n,d){
+  const s=S_OF(UI.pol)[n.id];
+  if(n.tipo==='tes'){ const v=s.fim[d], e=emInfo(n.id,d), em=emFor(UI.pol,n.id,d)??(e?e.em:0), pp=(e?e.med:0)+em;
+    if(v>n.teto) return 'p2'; if(v>0.85*n.teto) return 'p1'; if(v<em) return 'n2'; if(v<pp) return 'n1'; return 'm'; }
+  const f=folga(n,d); if(f===null) return 'm'; if(f<0) return 'n2'; if(f<0.5) return 'n1'; if(f>6) return 'p2'; if(f>4) return 'p1'; return 'm';
+}
+function clsCD(d){ const v=S_OF(UI.pol).CD.fim[d], e=emInfo('CD',d), em=emFor(UI.pol,'CD',d)??(e?e.em:0), pp=Math.max(0,e?e.med:0)+em;
+  if(v>CFG.Zmax) return 'p2'; if(v>0.85*CFG.Zmax) return 'p1'; if(v<em) return 'n2'; if(v<pp) return 'n1'; return 'm'; }
+function errPct(n,d){ const r=realOf(n,d), f=fqAgg(n,UI.h,d,.5); return (f&&f>0) ? r/f-1 : null; }
+function clsErro(n,d){
+  if(n.tipo==='cd'||n.tipo==='tes'){ const e=errPct(n,d); if(e===null) return 'm'; return e>0.25?'n2':e>0.10?'n1':e<-0.25?'p2':e<-0.10?'p1':'m'; }
+  const r=n.real[d], q95=fq(n,UI.h,d,.95), q75=fq(n,UI.h,d,.75), q05=fq(n,UI.h,d,.05), q25=fq(n,UI.h,d,.25);
+  if(q95===null) return 'm'; if(r>q95) return 'n2'; if(r>q75) return 'n1'; if(r<q05) return 'p2'; if(r<q25) return 'p1'; return 'm';
+}
+function changeOf(id,d){ return changesOf(UI.pol).find(c=>c.id===id&&c.d===d); }
+
+/* ================= Mapa ================= */
+const svg=document.getElementById('map');
+const POS={BC:{x:20,y:34,w:236,h:58}, CD:{x:20,y:166,w:236,h:112}};
+const rowH = Math.min(100, 400/Math.max(1,TES.length));
+TES.forEach((t,i)=>{ POS[t.id]={x:330,y:46+i*rowH,w:188,h:60}; t.filhos.forEach((j,k)=>{ POS[j.id]={cx:618,cy:46+i*rowH+30+(k-(t.filhos.length-1)/2)*28,r:11}; }); });
+const exSp = EXTS.length>1 ? Math.min(62,(800-356)/(EXTS.length-1)) : 0;
+EXTS.forEach((e,k)=>{ POS[e.id]={cx:356+k*exSp,cy:492,r:13}; });
+const maxFlow = Math.max(1, ...PKEYS.flatMap(pk=>[...TES,...EXTS].flatMap(n=>S_OF(pk)[n.id].cheg)));
+const ew = v => (1.6+3.4*Math.min(1,v/maxFlow)).toFixed(1);
+
+function renderMap(){
+  const d=UI.day, S=S_OF(UI.pol), L=UI.layer;
+  let h=`<defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink-2)"/></marker>
+    <marker id="ahE" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/></marker>
+    <marker id="ahB" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s6)"/></marker>
+    <marker id="ahG" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s3)"/></marker>
+  </defs>`;
+  h+=`<text x="330" y="26" font-size="11" fill="var(--muted)" letter-spacing="0.06em">AGÊNCIAS · TESOURARIA → GO → ATMs INTERNOS</text>`;
+  h+=`<text x="330" y="452" font-size="11" fill="var(--muted)" letter-spacing="0.06em">ATMs EXTERNOS · SUPRIDOS DIRETO PELA TESOURARIA CENTRAL</text>`;
+  h+=`<line x1="320" y1="436" x2="808" y2="436" stroke="var(--line)" stroke-width="1"/>`;
+  const tr=POS.CD, trR={x:tr.x+tr.w, y:tr.y+tr.h/2}, trB={x:tr.x+tr.w/2, y:tr.y+tr.h};
+  const pathTes = p => `M${trR.x},${trR.y} C${trR.x+80},${trR.y} ${p.x-80},${p.y+p.h/2} ${p.x},${p.y+p.h/2}`;
+  const pathExt = p => `M${trB.x},${trB.y} C${trB.x},${p.cy} ${p.cx-90},${p.cy} ${p.cx-p.r-3},${p.cy}`;
+  const edge = (path,s)=>{
+    let e=''; const v=s.cheg[d]||0;
+    if(s.vC[d] && v>0) e+=`<path class="edge" d="${path}" fill="none" stroke="var(--ink-2)" stroke-width="${ew(s.vE[d]?v/2:v)}" marker-end="url(#ah)" opacity="0.75"/>`;
+    if(s.vE[d]) e+=`<path class="edge" d="${path}" fill="none" stroke="var(--s2)" stroke-width="${ew(s.vC[d]?v/2:v)}" stroke-dasharray="7 5" marker-end="url(#ahE)"/>`;
+    if((s.rec[d]||0)>0) e+=`<path class="edge" d="${path}" fill="none" stroke="var(--ink)" stroke-width="${ew(s.rec[d])}" stroke-dasharray="1.5 4" stroke-linecap="round" marker-start="url(#ah)"/>`;
+    return e;
+  };
+  TES.forEach(t=>{ h+=edge(pathTes(POS[t.id]),S[t.id]); });
+  EXTS.forEach(e=>{ h+=edge(pathExt(POS[e.id]),S[e.id]); });
+  TES.forEach(t=>{ const p=POS[t.id]; t.filhos.forEach(j=>{ const q=POS[j.id], v=S[j.id].go[d]||0; if(v>0) h+=`<line class="edge" x1="${p.x+p.w}" y1="${p.y+p.h/2}" x2="${q.cx-q.r-3}" y2="${q.cy}" stroke="var(--s3)" stroke-width="${ew(v)}" marker-end="url(#ahG)"/>`; }); });
+  let nc=0,ne=0,nr=0; [...TES,...EXTS].forEach(n=>{ const s=S[n.id]; if(s.vC[d]&&(s.cheg[d]||0)>0) nc++; if(s.vE[d]) ne++; if((s.rec[d]||0)>0) nr++; });
+  const sc=S.CD, bp=POS.BC, bcIn=sc.bc[d]||0, bcOut=sc.dev[d]||0, bcMax=Math.max(1,...sc.bc,...sc.dev), ewB=v=>(1.6+3.4*Math.min(1,v/bcMax)).toFixed(1);
+  if(bcIn>0) h+=`<line class="edge" x1="${bp.x+bp.w/2-16}" y1="${bp.y+bp.h}" x2="${tr.x+tr.w/2-16}" y2="${tr.y-3}" stroke="var(--s6)" stroke-width="${ewB(bcIn)}" marker-end="url(#ahB)"/>`;
+  if(bcOut>0) h+=`<line class="edge" x1="${tr.x+tr.w/2+16}" y1="${tr.y}" x2="${bp.x+bp.w/2+16}" y2="${bp.y+bp.h+3}" stroke="var(--ink)" stroke-width="${ewB(bcOut)}" stroke-dasharray="1.5 4" stroke-linecap="round" marker-end="url(#ah)"/>`;
+  const selBC=UI.sel==='BC';
+  h+=`<g class="node" data-id="BC" tabindex="0" role="button" aria-label="Custódia do BC: ${bcIn>0?'retirada de '+fMil(bcIn):'sem retirada'} no dia">
+    <rect class="focusring" x="${bp.x}" y="${bp.y}" width="${bp.w}" height="${bp.h}" rx="8" fill="var(--surface-2)" stroke="${selBC?'var(--ink)':'var(--line)'}" stroke-width="${selBC?2:1}"/>
+    <text x="${bp.x+12}" y="${bp.y+21}" font-size="12.5" font-weight="600" fill="var(--ink)">Custódia do BC (BB)</text>
+    <text x="${bp.x+12}" y="${bp.y+40}" font-size="11.5" fill="var(--ink-2)">${!(DIAS[d]||{}).bc?'fechada hoje':bcIn>0?'retirada chega: '+fMil(bcIn):bcOut>0?'devolução: '+fMil(bcOut):'sem movimento hoje'}</text></g>`;
+  const cc = L==='saldo' ? clsCD(d) : L==='erro' ? clsErro(CD,d) : 'm';
+  const eCD=emInfo('CD',d), emc=emFor(UI.pol,'CD',d)??0, ppc=Math.max(0,eCD?eCD.med:0)+emc, bwc=212, selCD=UI.sel==='CD';
+  const tick=v=>(tr.x+12+bwc*Math.min(1,v/CFG.Zmax)).toFixed(1);
+  h+=`<g class="node" data-id="CD" tabindex="0" role="button" aria-label="Tesouraria central: saldo ${fMil(sc.fim[d])}, despachou ${fMil(sc.desp[d])}">
+    <rect class="focusring" x="${tr.x}" y="${tr.y}" width="${tr.w}" height="${tr.h}" rx="8" fill="var(--surface)" stroke="${selCD?'var(--ink)':'var(--line)'}" stroke-width="${selCD?2:1}"/>
+    <text x="${tr.x+12}" y="${tr.y+19}" font-size="12.5" font-weight="600" fill="var(--ink)">Tesouraria central</text>
+    <text x="${tr.x+tr.w-12}" y="${tr.y+19}" font-size="11.5" text-anchor="end" fill="var(--ink-2)">${fMil(sc.fim[d])}</text>
+    <rect x="${tr.x+12}" y="${tr.y+27}" width="${bwc}" height="8" rx="4" fill="var(--surface-2)"/>
+    <rect x="${tr.x+12}" y="${tr.y+27}" width="${Math.max(3,Math.min(bwc,bwc*sc.fim[d]/CFG.Zmax)).toFixed(1)}" height="8" rx="4" fill="${cc==='m'?'var(--muted)':DIV[cc]}"/>
+    <line x1="${tick(emc)}" y1="${tr.y+23}" x2="${tick(emc)}" y2="${tr.y+39}" stroke="var(--ink)" stroke-width="1.5"/>
+    <line x1="${tick(ppc)}" y1="${tr.y+24}" x2="${tick(ppc)}" y2="${tr.y+38}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 2"/>
+    <text x="${tr.x+12}" y="${tr.y+54}" font-size="11" fill="var(--ink-2)">despacha ${fMil(sc.desp[d])} · volta ${fMil(sc.ret[d]||0)}</text>
+    <text x="${tr.x+12}" y="${tr.y+70}" font-size="11" fill="var(--ink-2)">${isTransp(d)?nc+' conv. · '+ne+' esp. · '+nr+' recolh.':'sem transportadora'}</text>
+    <text x="${tr.x+12}" y="${tr.y+86}" font-size="11" fill="var(--muted)">mínimo ${fMil(emc)}</text>
+    <text x="${tr.x+12}" y="${tr.y+101}" font-size="11" fill="var(--muted)">ponto de pedido ${fMil(ppc)}</text>`;
+  if((sc.short[d]||0)>0.5) h+=`<g transform="translate(${tr.x+tr.w-12},${tr.y+tr.h-14})"><circle r="6.5" fill="var(--crit)" stroke="var(--ring)" stroke-width="2"/><text y="3.5" font-size="9" font-weight="700" text-anchor="middle" fill="#fff">!</text></g>`;
+  h+=`</g>`;
+  TES.forEach(t=>{
+    const p=POS[t.id], s=S[t.id], sel=UI.sel===t.id;
+    const c = L==='saldo'?clsSaldo(t,d) : L==='erro'?clsErro(t,d) : 'm';
+    const chg = L==='decisoes' ? changesOf(UI.pol).filter(x=>x.d===d&&(x.id===t.id||t.filhos.some(j=>j.id===x.id))).length : 0;
+    const fade = L==='decisoes' && !chg ? 0.45 : 1;
+    const bw=164, frac=Math.min(1.08,s.fim[d]/t.teto), e=emInfo(t.id,d), emv=emFor(UI.pol,t.id,d)??0, ppv=(e?e.med:0)+emv;
+    const fila = t.filhos.filter(j=>S[j.id].fila[d]).length;
+    h+=`<g class="node" data-id="${t.id}" tabindex="0" role="button" opacity="${fade}" aria-label="${esc(t.nome)}: saldo ${fMil(s.fim[d])}, teto ${fMil(t.teto)}">
+      <rect class="focusring" x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" rx="8" fill="var(--surface)" stroke="${sel?'var(--ink)':'var(--line)'}" stroke-width="${sel?2:1}"/>
+      <text x="${p.x+12}" y="${p.y+19}" font-size="12.5" font-weight="600" fill="var(--ink)">${t.id} · Agência ${t.ag}</text>
+      <text x="${p.x+p.w-12}" y="${p.y+19}" font-size="11.5" text-anchor="end" fill="var(--ink-2)">${fMil(s.fim[d])}</text>
+      <rect x="${p.x+12}" y="${p.y+27}" width="${bw}" height="8" rx="4" fill="var(--surface-2)"/>
+      <rect x="${p.x+12}" y="${p.y+27}" width="${Math.max(3,Math.min(bw,frac*bw)).toFixed(1)}" height="8" rx="4" fill="${c==='m'?'var(--muted)':DIV[c]}"/>
+      <line x1="${(p.x+12+bw*Math.min(1,emv/t.teto)).toFixed(1)}" y1="${p.y+23}" x2="${(p.x+12+bw*Math.min(1,emv/t.teto)).toFixed(1)}" y2="${p.y+39}" stroke="var(--ink)" stroke-width="1.5"/>
+      <line x1="${(p.x+12+bw*Math.min(1,ppv/t.teto)).toFixed(1)}" y1="${p.y+24}" x2="${(p.x+12+bw*Math.min(1,ppv/t.teto)).toFixed(1)}" y2="${p.y+38}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 2"/>
+      <text x="${p.x+12}" y="${p.y+51}" font-size="11" fill="var(--ink-2)">GO ${nf(s.min[d])}/${nf(CFG.Theta)} min${fila?` · ${fila} na fila`:''}${isGO(d)?'':' · sem expediente'}</text>`;
+    if(s.exc[d]>0) h+=`<g transform="translate(${p.x+p.w-14},${p.y-6})"><path d="M0,-7 L7,6 L-7,6 z" fill="var(--warn)" stroke="var(--ring)" stroke-width="2"/><text y="4" font-size="9" font-weight="700" text-anchor="middle" fill="#0b0b0b">!</text></g>`;
+    if(s.na[d]>0.5) h+=`<g transform="translate(${p.x+14},${p.y-6})"><circle r="6.5" fill="var(--crit)" stroke="var(--ring)" stroke-width="2"/><text y="3.5" font-size="9" font-weight="700" text-anchor="middle" fill="#fff">!</text></g>`;
+    if(chg) h+=`<g transform="translate(${p.x+p.w},${p.y+p.h/2})"><circle r="9" fill="var(--ink)" stroke="var(--ring)" stroke-width="2"/><text y="4" font-size="10" font-weight="600" text-anchor="middle" fill="var(--surface)">Δ${chg>1?chg:''}</text></g>`;
+    h+=`</g>`;
+  });
+  const atmNode = n=>{
+    const p=POS[n.id], s=S[n.id], sel=UI.sel===n.id, chg=changeOf(n.id,d);
+    const c = L==='saldo'?clsSaldo(n,d) : L==='erro'?clsErro(n,d) : 'm';
+    const fade = L==='decisoes' && !chg ? 0.35 : 1;
+    const fo=folga(n,d), ep=errPct(n,d);
+    const val = L==='saldo' ? (fo===null?'':(fo>=0?'+':'−')+nf(Math.abs(fo),1)+' d') : L==='erro' ? fPct(ep) : (chg?chg.cls.split(' ')[0]:'');
+    let g=`<g class="node" data-id="${n.id}" tabindex="0" role="button" opacity="${fade}" aria-label="${esc(n.nome)}: saldo ${fMil(s.fim[d])}">`;
+    if(sel) g+=`<circle cx="${p.cx}" cy="${p.cy}" r="${p.r+5}" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
+    g+=`<circle class="focusring" cx="${p.cx}" cy="${p.cy}" r="${p.r}" fill="${DIV[c]}" stroke="var(--ring)" stroke-width="2"/>`;
+    if(L==='decisoes' && chg) g+=`<text x="${p.cx}" y="${p.cy+4}" font-size="10" font-weight="700" text-anchor="middle" fill="var(--ink)">Δ</text>`;
+    if(s.na[d]>0.5) g+=`<g transform="translate(${p.cx+p.r-1},${p.cy-p.r+1})"><circle r="6.5" fill="var(--crit)" stroke="var(--ring)" stroke-width="2"/><text y="3.5" font-size="9" font-weight="700" text-anchor="middle" fill="#fff">!</text></g>`;
+    if(s.exc[d]>0.5) g+=`<g transform="translate(${p.cx-p.r+1},${p.cy+p.r-1})"><path d="M0,-6 L6,5 L-6,5 z" fill="var(--warn)" stroke="var(--ring)" stroke-width="1.5"/></g>`;
+    if(s.fila[d] && !(s.go[d]>0)) g+=`<g transform="translate(${p.cx-p.r+1},${p.cy-p.r+1})"><circle r="6" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="1.5"/><path d="M0,-3 L0,0 L2.5,1.5" stroke="var(--ink-2)" stroke-width="1.3" fill="none"/></g>`;
+    if(n.tipo==='ext'){
+      g+=`<text x="${p.cx}" y="${p.cy+p.r+16}" font-size="11" text-anchor="middle" font-family="var(--font-mono)" fill="var(--ink-2)">${n.id}</text>`;
+      g+=`<text x="${p.cx}" y="${p.cy+p.r+30}" font-size="11" text-anchor="middle" fill="var(--muted)">${esc(val)}</text>`;
+    } else {
+      g+=`<text x="${p.cx+p.r+8}" y="${p.cy+4}" font-size="11" font-family="var(--font-mono)" fill="var(--ink-2)">${n.id}</text>`;
+      g+=`<text x="${p.cx+p.r+48}" y="${p.cy+4}" font-size="11" fill="var(--muted)">${esc(val)}</text>`;
+    }
+    return g+'</g>';
+  };
+  ATMS.forEach(n=>h+=atmNode(n));
+  svg.innerHTML=h;
+  document.getElementById('mapsub').textContent = lbl(d)+' · '+POL[UI.pol].nome;
+}
+
+function renderLegend(){
+  const L=UI.layer; let a='';
+  const sw = (c,t)=>`<span class="it"><span class="sw" style="background:${c};border-radius:50%"></span>${t}</span>`;
+  if(L==='saldo') a+=`<div class="grp"><span class="gt">Folga de saldo</span>${sw(DIV.n2,'negativa: falta antes de poder repor')}${sw(DIV.n1,'0–0,5 d')}${sw(DIV.m,'0,5–4 d')}${sw(DIV.p1,'4–6 d')}${sw(DIV.p2,'&gt; 6 d · tesouraria acima do teto')}</div><div class="grp" style="color:var(--muted)">Tesouraria e central: vermelho forte abaixo do estoque mínimo da política, claro abaixo do ponto de pedido, azul acima de 85% do teto. Na barra: traço preto = estoque mínimo; tracejado = ponto de pedido.</div>`;
+  if(L==='erro') a+=`<div class="grp"><span class="gt">Real × previsão (${UI.h} d antes)</span>${sw(DIV.n2,'acima do P95')}${sw(DIV.n1,'P75–P95')}${sw(DIV.m,'P25–P75')}${sw(DIV.p1,'P05–P25')}${sw(DIV.p2,'abaixo do P05')}</div>`;
+  if(L==='decisoes') a+=`<div class="grp"><span class="gt">Decisões</span><span class="it"><span class="sw" style="background:var(--ink);border-radius:50%"></span>Δ = decisão executada difere do plano anterior</span><span class="it">demais pontos esmaecidos</span></div>`;
+  a+=`<div class="grp"><span class="gt">Fluxos</span>
+    <span class="it"><svg class="edgekey" viewBox="0 0 26 10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--s6)" stroke-width="2.5"/></svg>retirada na custódia</span>
+    <span class="it"><svg class="edgekey" viewBox="0 0 26 10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--ink-2)" stroke-width="2.5"/></svg>convencional</span>
+    <span class="it"><svg class="edgekey" viewBox="0 0 26 10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--s2)" stroke-width="2.5" stroke-dasharray="6 4"/></svg>especial</span>
+    <span class="it"><svg class="edgekey" viewBox="0 0 26 10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--s3)" stroke-width="2.5"/></svg>GO abastece</span>
+    <span class="it"><svg class="edgekey" viewBox="0 0 26 10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--ink)" stroke-width="2.5" stroke-dasharray="1.5 4" stroke-linecap="round"/></svg>recolhimento ou devolução</span></div>
+  <div class="grp"><span class="gt">Eventos</span>
+    <span class="it"><svg width="14" height="14" viewBox="-7 -7 14 14"><circle r="6" fill="var(--crit)"/><text y="3.5" font-size="9" font-weight="700" text-anchor="middle" fill="#fff">!</text></svg>ruptura (no ATM) ou falta no guichê</span>
+    <span class="it"><svg width="16" height="14" viewBox="-8 -8 16 15"><path d="M0,-7 L7,6 L-7,6 z" fill="var(--warn)"/></svg>acima do teto / depósito recusado</span>
+    <span class="it"><svg width="14" height="14" viewBox="-7 -7 14 14"><circle r="5.5" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="1.5"/><path d="M0,-3 L0,0 L2.5,1.5" stroke="var(--ink-2)" stroke-width="1.3" fill="none"/></svg>na fila do GO</span>
+    <span class="it"><svg width="14" height="14" viewBox="-7 -7 14 14"><circle r="6" fill="var(--crit)"/><text y="3.5" font-size="9" font-weight="700" text-anchor="middle" fill="#fff">!</text></svg>na central: faltou para despachar</span></div>`;
+  document.getElementById('legend').innerHTML=a;
+}
+
+function renderDayTable(){
+  const d=UI.day, S=S_OF(UI.pol);
+  let t='<thead><tr><th>Ponto</th><th class="num">Saldo fim</th><th class="num">Saque real</th><th class="num">P50</th><th class="num">Erro</th><th>Fluxo do dia</th><th>Evento</th></tr></thead><tbody>';
+  { const sc=S.CD; t+=`<tr><td class="mono">CD</td><td class="num">${fMil(sc.fim[d])}</td><td class="num">${nf(realOf(CD,d))}</td><td class="num">${nf(fqAgg(CD,UI.h,d,.5))}</td><td class="num">${fPct(errPct(CD,d))}</td><td>${['custódia +'+fMil(sc.bc[d]||0),'despacha '+fMil(sc.desp[d]||0),'volta '+fMil(sc.ret[d]||0)].concat(sc.dev[d]>0?['devolve '+fMil(sc.dev[d])]:[]).join(' · ')}</td><td>${sc.short[d]>0.5?'faltou '+fMil(sc.short[d]):sc.fim[d]<(emFor(UI.pol,'CD',d)??0)?'abaixo do mínimo':'—'}</td></tr>`; }
+  [...TES,...ATMS].forEach(n=>{
+    const s=S[n.id]; let real='—',p50='—';
+    real=nf(realOf(n,d)); p50=nf(fqAgg(n,UI.h,d,.5));
+    const fl=[]; if(s.vC[d]&&(s.cheg[d]||0)>0) fl.push('conv. '+fMil(s.cheg[d])); if(s.vE[d]) fl.push('esp. '+fMil(s.cheg[d])); if((s.rec[d]||0)>0) fl.push('recolhe '+fMil(s.rec[d])); if(s.go[d]>0) fl.push('GO '+fMil(s.go[d]));
+    const ev=[]; if(s.na[d]>0.5) ev.push((n.tipo==='tes'?'falta no guichê ':'ruptura ')+fMil(s.na[d])); if(s.exc[d]>0) ev.push(n.tipo==='tes'?'acima do teto':'depósito recusado'); if(s.fila[d]&&!(s.go[d]>0)) ev.push('fila do GO');
+    t+=`<tr><td class="mono">${n.id}</td><td class="num">${fMil(s.fim[d])}</td><td class="num">${real}</td><td class="num">${p50}</td><td class="num">${fPct(errPct(n,d))}</td><td>${fl.join(' · ')||'—'}</td><td>${ev.join(' · ')||'—'}</td></tr>`;
+  });
+  document.getElementById('daytable').innerHTML=t+'</tbody>';
+}
+
+/* ================= Faixa macro ================= */
+const COMP=[['conv','Transporte convencional','var(--s1)',false],['esp','Transporte especial','var(--s2)',false],['go','Tempo do GO','var(--s3)',false],['opor','Custo de oportunidade','var(--s4)',true],['pen','Penalidades','var(--s5)',false],['num','Numerário (custódia e processamento)','var(--s6)',false]];
+function renderMacro(){
+  const k=K[UI.pol], k0=K.P0, k4=K.P4;
+  const comp={...k.comp, pen:(k.comp.rupt||0)+(k.comp.estouro||0)};
+  document.getElementById('pol-name').textContent=POL[UI.pol].nome;
+  document.getElementById('k-total').textContent=fR(k.total);
+  const del=document.getElementById('k-delta');
+  if(k0 && UI.pol!=='P0'){ const dl=k.total/k0.total-1; del.textContent=fPct(dl)+' vs regra fixa (P0)'; del.className='delta'+(dl<0?' good':' bad'); }
+  else { del.textContent='referência para as demais políticas'; del.className='delta'; }
+  let b='',lg='';
+  COMP.forEach(([c,nome,col,dk])=>{ const v=comp[c]||0, sh=v/k.total; if(v<=0) return;
+    b+=`<div class="${dk?'dk':''}" style="flex:${sh};background:${col}" title="${nome}: ${fR(v)} (${nf(sh*100)}%)">${sh>0.09?nf(sh*100)+'%':''}</div>`;
+    lg+=`<span><span class="sw" style="background:${col}"></span>${nome} · ${fR(v)}</span>`; });
+  const bar=document.getElementById('k-bar'); bar.innerHTML=b; bar.setAttribute('aria-label','Decomposição do custo: '+COMP.map(([c,n])=>n+' '+fR(comp[c])).join(', '));
+  document.getElementById('k-leg').innerHTML=lg;
+  const cp=(DATA.comparacao.por_politica||{})[UI.pol]||{};
+  const tiles=[
+    ['Nível de serviço', nf(k.fill*100,2)+'%', 'saque atendido ÷ demanda'],
+    ['Rupturas', nf(k.rupt), 'ponto-dias com saque não atendido · '+k.abaixoMin+' dia'+(k.abaixoMin===1?'':'s')+' de tesouraria abaixo do estoque mínimo'],
+    ['Saldo parado', nf(k.parado), 'ponto-dias com cobertura acima de 6 d · '+k.est+' acima do teto'],
+    ['Visitas especiais', nf(k.esp), nf(k.conv)+' convencionais · '+nf(k.especiais_reativas||0)+' reativas'],
+    ['Minutos do GO', nf(k.goAvg,0)+' de '+nf(CFG.Theta), 'média por agência-dia útil · '+k.lim+' com fila'],
+    ['Custo do erro', UI.pol==='P4'||cp.custo_erro===undefined?'—':fR(cp.custo_erro), UI.pol==='P4'?'o oráculo não erra':'falta '+fR(cp.lado_falta)+' · excesso '+fR(cp.lado_excesso)],
+    ['Numerário da custódia', fMil(k.bcTot), k.bcN+' retiradas · '+nf(k.recirc*100)+'% do despachado recirculou'],
+    ['Onde está o dinheiro', 'central '+nf(k.shZ*100)+'%', 'agências '+nf(k.shT*100)+'% · ATMs '+nf(k.shI*100)+'% (saldo médio)'],
+  ];
+  document.getElementById('tiles').innerHTML=tiles.map(([l,v,s])=>`<div class="tile"><span class="lab">${l}</span><span class="val">${v}</span><span class="sub">${s}</span></div>`).join('');
+}
+
+/* ================= Gráficos pequenos ================= */
+const CW=300, CH=150, PAD={l:44,r:8,t:10,b:22};
+function niceMax(v){ if(!(v>0)) return 1; const p=Math.pow(10,Math.floor(Math.log10(v))); const m=v/p; return (m<=2?2:m<=5?5:10)*p; }
+function faixa(rotulos,linhasV,titulo,cor='var(--s2)',fmt=v=>v?'sim':'não'){
+  // tira de calor: uma linha por série, uma célula por dia
+  const W=W2, rh=18, top=6, left=56, H=top+rotulos.length*rh+22, cw=(W-left-12)/D;
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}">`;
+  rotulos.forEach((r,i)=>{ const y=top+i*rh; g+=`<text x="${left-6}" y="${y+12}" font-size="10.5" text-anchor="end" fill="var(--muted)" font-family="var(--font-mono)">${esc(r)}</text>`;
+    linhasV[i].forEach((v,d)=>{ g+=`<rect x="${left+d*cw+0.5}" y="${y+1}" width="${Math.max(1,cw-1)}" height="${rh-3}" rx="2" fill="${v===null?'transparent':v?cor:'var(--surface-2)'}"><title>${esc(r)} · ${lbl(d)}: ${v===null?'—':fmt(v)}</title></rect>`; }); });
+  TICKS.forEach(d=>{ g+=`<text x="${left+d*cw+cw/2}" y="${H-6}" font-size="10" text-anchor="middle" fill="var(--muted)">${lbl(d).slice(4)}</text>`; });
+  return `<div class="sect"><span class="st">${titulo}</span>`+g+'</svg></div>';
+}
+function axisY(max,W=CW,H=CH,P=PAD){ return [0,max/2,max].map(t=>{ const y=P.t+(H-P.t-P.b)*(1-t/max); return `<line x1="${P.l}" x2="${W-P.r}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${P.l-6}" y="${y+3.5}" font-size="10" text-anchor="end" fill="var(--muted)" font-family="var(--font-mono)">${nf(t)}</text>`; }).join(''); }
+const xs = (d,W=CW,P=PAD) => P.l + (W-P.l-P.r)*(D>1?d/(D-1):0.5);
+const TICKS = (()=>{ const t=[]; for(let d=0; d<D; d+=Math.max(1,Math.round(D/5))) t.push(d); if(t[t.length-1]!==D-1 && D-1-t[t.length-1]>=Math.max(2,Math.round(D/10))) t.push(D-1); return t; })();
+function xAxis(W=CW,H=CH,P=PAD){ return TICKS.map(d=>`<text x="${xs(d,W,P)}" y="${H-6}" font-size="10" text-anchor="${d===0?'start':d===D-1?'end':'middle'}" fill="var(--muted)">${lbl(d).slice(4)}</text>`).join(''); }
+function hoverCols(kind){ let s=''; const w=(CW-PAD.l-PAD.r)/Math.max(1,D-1); for(let d=0;d<D;d++) s+=`<rect x="${xs(d)-w/2}" y="${PAD.t}" width="${w}" height="${CH-PAD.t-PAD.b}" fill="transparent" data-k="${kind}" data-d="${d}"/>`; return s; }
+function seriesFor(n){ const arr=[]; for(let d=0; d<D; d++){ const q={}; [.05,.25,.5,.75,.95].forEach(z=>q[z]=fqAgg(n,UI.h,d,z)); arr.push({d,q,real:realOf(n,d)}); } return arr; }
+function fanChart(n){
+  const ser=seriesFor(n).filter(s=>s.q[.5]!==null); if(!ser.length) return '<span class="cap">Sem previsão.</span>';
+  const max=niceMax(Math.max(...ser.map(s=>Math.max(s.q[.95],s.real)))*1.05), ys=v=>PAD.t+(CH-PAD.t-PAD.b)*(1-v/max);
+  const band=(lo,hi)=>'M'+ser.map(s=>xs(s.d)+','+ys(s.q[hi])).join(' L')+' L'+ser.slice().reverse().map(s=>xs(s.d)+','+ys(s.q[lo])).join(' L')+' Z';
+  let g=`<svg viewBox="0 0 ${CW} ${CH}" role="img" aria-label="Previsão e real de ${n.id}">${axisY(max)}`;
+  g+=`<line x1="${xs(UI.day)}" x2="${xs(UI.day)}" y1="${PAD.t}" y2="${CH-PAD.b}" stroke="var(--axis)" stroke-width="1"/>`;
+  g+=`<path d="${band(.05,.95)}" fill="var(--s1)" opacity="0.13"/><path d="${band(.25,.75)}" fill="var(--s1)" opacity="0.22"/>`;
+  g+=`<path d="M${ser.map(s=>xs(s.d)+','+ys(s.q[.5])).join(' L')}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  ser.forEach(s=>{ const out=s.real>s.q[.95]||s.real<s.q[.05]; g+=`<circle cx="${xs(s.d)}" cy="${ys(s.real)}" r="${out?3.6:2.6}" fill="var(--s2)" stroke="var(--ring)" stroke-width="1.5"/>`; });
+  return g+xAxis()+hoverCols('fan')+'</svg>';
+}
+function saldoChart(n){
+  const s = n.tipo==='cd' ? S_OF(UI.pol).CD : S_OF(UI.pol)[n.id];
+  const lim = n.tipo==='tes'? n.teto : n.tipo==='cd' ? CFG.Zmax : n.cap;
+  const vals=s.fim.slice(0,D), max=niceMax(Math.max(lim,...vals)*1.05), ys=v=>PAD.t+(CH-PAD.t-PAD.b)*(1-v/max);
+  let g=`<svg viewBox="0 0 ${CW} ${CH}" role="img" aria-label="Saldo de fim de dia de ${n.id}">${axisY(max)}`;
+  g+=`<line x1="${PAD.l}" x2="${CW-PAD.r}" y1="${ys(lim)}" y2="${ys(lim)}" stroke="var(--ink-2)" stroke-width="1"/><text x="${PAD.l+3}" y="${ys(lim)+12}" font-size="10" fill="var(--ink-2)">${n.tipo==='ext'||n.tipo==='int'?'capacidade':'teto'}</text>`;
+  if(n.tipo==='tes'||n.tipo==='cd'){
+    const emS=[],ppS=[]; for(let d=0;d<D;d++){ const e=emInfo(n.id,d), em=emFor(UI.pol,n.id,d)??0, med=e?Math.max(0,e.med):0; emS.push(xs(d)+','+ys(Math.min(max,em))); ppS.push(xs(d)+','+ys(Math.min(max,med+em))); }
+    g+=`<path d="M${ppS.join(' L')}" fill="none" stroke="var(--muted)" stroke-width="1.25" stroke-dasharray="3 3"/><path d="M${emS.join(' L')}" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
+  }
+  g+=`<line x1="${xs(UI.day)}" x2="${xs(UI.day)}" y1="${PAD.t}" y2="${CH-PAD.b}" stroke="var(--axis)" stroke-width="1"/>`;
+  const pts=vals.map((v,d)=>xs(d)+','+ys(v));
+  g+=`<path d="M${xs(0)},${ys(0)} L${pts.join(' L')} L${xs(D-1)},${ys(0)} Z" fill="var(--s1)" opacity="0.10"/><path d="M${pts.join(' L')}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round"/>`;
+  for(let d=0;d<D;d++){
+    if(n.tipo==='cd'){ if(s.bc[d]>0) g+=`<path d="M${xs(d)-4},${PAD.t+1} L${xs(d)+4},${PAD.t+1} L${xs(d)},${PAD.t+8} z" fill="var(--s6)"/>`; if(s.dev[d]>0) g+=`<path d="M${xs(d)-4},${PAD.t+8} L${xs(d)+4},${PAD.t+8} L${xs(d)},${PAD.t+1} z" fill="var(--ink)"/>`; if(s.short[d]>0.5) g+=`<circle cx="${xs(d)}" cy="${ys(0)}" r="4" fill="var(--crit)" stroke="var(--ring)" stroke-width="2"/>`; continue; }
+    if(s.vE[d]) g+=`<path d="M${xs(d)-4},${PAD.t+1} L${xs(d)+4},${PAD.t+1} L${xs(d)},${PAD.t+8} z" fill="var(--s2)"/>`;
+    else if((s.vC[d]&&(s.cheg[d]||0)>0)||(s.go[d]>0)) g+=`<path d="M${xs(d)-4},${PAD.t+1} L${xs(d)+4},${PAD.t+1} L${xs(d)},${PAD.t+8} z" fill="var(--ink-2)"/>`;
+    if(s.na[d]>0.5) g+=`<circle cx="${xs(d)}" cy="${ys(0)}" r="4" fill="var(--crit)" stroke="var(--ring)" stroke-width="2"/>`;
+  }
+  return g+xAxis()+hoverCols('saldo')+'</svg>';
+}
+
+/* ================= Inspetor ================= */
+const MODEL={
+  bc:{v:['β<sub>c</sub>','b<sub>c</sub>','δ<sub>c</sub>','g<sub>c</sub>'], r:['R11 balanço da central','R13 ligação e calendário da custódia','R9 não antecipatividade'], c:'K<sup>BC</sup> por remessa; c<sup>BC</sup> e c<sup>rBC</sup> por valor'},
+  cd:{v:['Z<sub>c</sub>','e<sup>CD</sup><sub>c</sub>','v<sup>m</sup><sub>n</sub>','x<sup>m</sup><sub>n</sub>','r<sub>n</sub>'], r:['R11 balanço','R12 teto','R14 estoque mínimo','R6 ligação volume–visita','R8 calendário'], c:'h · saldo; c<sup>P</sup> · processamento; K<sup>m</sup>, κ por visita; p<sup>EM</sup> · abaixo do mínimo'},
+  tes:{v:['T<sub>b</sub>','x<sup>m</sup><sub>b</sub>','r<sub>b</sub>','o<sub>b</sub>','e<sub>b</sub>'], r:['R3 balanço','R4 disponibilidade','R5 minutos do GO','R7 teto','R10 estoque mínimo'], c:'h · saldo; p<sup>o</sup> · excesso; p<sup>EM</sup> · abaixo do mínimo'},
+  int:{v:['y<sub>j</sub>','q<sub>j</sub>','I<sub>j</sub>','u<sub>j</sub>'], r:['R1 balanço','R4 disponibilidade','R5 minutos do GO','R6 ligação','R7 capacidade'], c:'c<sup>GO</sup> · θ<sub>j</sub>; h · saldo; p · falta'},
+  ext:{v:['v<sup>m</sup><sub>k</sub>','x<sup>m</sup><sub>k</sub>','I<sub>k</sub>','u<sub>k</sub>'], r:['R2 balanço','R6 ligação','R7 capacidade','R8 calendário'], c:'K<sup>m</sup>, κ; h · saldo; p · falta'},
+};
+const TIPO={bc:'Custódia do BC',cd:'Tesouraria central',tes:'Tesouraria',int:'ATM interno',ext:'ATM externo'};
+function diasTxt(e){ return e&&e.dias.length ? lbl(e.dias[0])+(e.dias.length>1?' a '+lbl(e.dias[e.dias.length-1]):'')+' ('+e.dias.length+' dia'+(e.dias.length>1?'s':'')+')' : (e&&e.ndias? e.ndias+' dias (parte fora do período)':'—'); }
+function usaTxt(id){ if(UI.pol==='P0') return 'reserva fixa da regra atual'; if(['P1','P4','P3_sem_EM'].includes(UI.pol)) return id==='CD'?'só a reserva R<sub>c</sub>':'só a reserva operacional R<sub>b</sub>'; return 'o estoque mínimo da fórmula'; }
+function renderInsp(){
+  const n=BY[UI.sel], d=UI.day, S=S_OF(UI.pol), el=document.getElementById('insp'), M_=MODEL[n.tipo];
+  let h=`<div class="hd"><span class="chip">${TIPO[n.tipo]}</span><h3>${esc(n.nome)}</h3><span style="font-size:13px;color:var(--muted)">${lbl(d)} · ${esc(POL[UI.pol].nome)}</span></div>`;
+  const kk=K[UI.pol];
+  if(n.tipo==='bc'){
+    const sc=S.CD, rows=[];
+    for(let x=0;x<D;x++){ if(sc.bc[x]>0) rows.push([x,'Retirada',sc.bc[x],CFG.KBC+CFG.cBC*sc.bc[x]]); if(sc.dev[x]>0) rows.push([x,'Devolução',sc.dev[x],CFG.KBC+CFG.cRBC*sc.dev[x]]); }
+    h+=`<dl class="kv">
+      <dt>Prazo</dt><dd>D+${CFG.LBC} útil</dd>
+      <dt>Tarifa por retirada (c<sup>BC</sup>)</dt><dd>R$ ${nf(CFG.cBC,2)} por R$ mil</dd>
+      <dt>Tarifa por devolução (c<sup>rBC</sup>)</dt><dd>R$ ${nf(CFG.cRBC,2)} por R$ mil</dd>
+      <dt>Fixo por remessa (K<sup>BC</sup>)</dt><dd>${fR(CFG.KBC)}</dd>
+      <dt>Processar numerário próprio (c<sup>P</sup>)</dt><dd>R$ ${nf(CFG.cP,2)} por R$ mil</dd>
+      <dt>Retirado no período</dt><dd>${fMil(kk.bcTot)} em ${kk.bcN} remessas</dd>
+      <dt>Devolvido no período</dt><dd>${fMil(kk.devTot)}</dd>
+      <dt>Custo do numerário</dt><dd>${fR(kk.comp.num)}</dd></dl>
+    <div class="sect"><span class="st">Remessas no período</span>${rows.length?`<div class="tablewrap"><table><tbody>${rows.map(r=>`<tr${r[0]===d?' class="sel"':''}><td class="mono">${lbl(r[0])}</td><td>${r[1]}</td><td class="num">${fMil(r[2])}</td><td class="num">${fR(r[3])}</td></tr>`).join('')}</tbody></table></div>`:'<span style="font-size:13px;color:var(--ink-2)">Nenhuma.</span>'}</div>
+    <span style="font-size:12.5px;color:var(--ink-2)">Tarifa percentual sobre cada retirada e devolução (Resolução BCB nº 134/2021). Valores parametrizados.</span>`;
+  } else if(n.tipo==='cd'){
+    const sc=S.CD, e=emInfo('CD',d), emP=emFor(UI.pol,'CD',d), rows=[];
+    [...TES,...EXTS].forEach(x=>{ const s=S[x.id]; if(s.vC[d]&&(s.cheg[d]||0)>0) rows.push([x.id,'Convencional',s.cheg[d]]); if(s.vE[d]) rows.push([x.id,'Especial',s.cheg[d]]); if((s.rec[d]||0)>0) rows.push([x.id,'Recolhimento',s.rec[d]]); });
+    const raw = e&&e.sep!==null&&e.ganho!==null ? e.sep-e.ganho : null;
+    h+=`<dl class="kv">
+      <dt>Saldo início → fim</dt><dd>${fMil(sc.ant[d])} → ${fMil(sc.fim[d])}</dd>
+      <dt>Entrou da custódia</dt><dd>${fMil(sc.bc[d]||0)}</dd>
+      <dt>Recolhimentos processados</dt><dd>${fMil(sc.ret[d]||0)}</dd>
+      <dt>Despachado</dt><dd>${fMil(sc.desp[d]||0)}${sc.short[d]>0.5?'<br><span style="color:var(--crit);font-weight:600">! faltou '+fMil(sc.short[d])+'</span>':''}</dd>
+      <dt>Devolvido à custódia</dt><dd>${fMil(sc.dev[d]||0)}</dd>
+      <dt>Teto</dt><dd>${fMil(CFG.Zmax)}</dd></dl>
+    <div class="sect"><span class="st">Visitas despachadas no dia</span>${rows.length?`<div class="tablewrap"><table><tbody>${rows.map(r=>`<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td class="num">${fMil(r[2])}</td></tr>`).join('')}</tbody></table></div>`:'<span style="font-size:13px;color:var(--ink-2)">Nenhuma visita.</span>'}</div>
+    <div class="sect"><span class="st">Estoque de segurança concentrado</span>
+      <div class="formula sm">EM<sup>CD</sup> = max{R<sub>c</sub>; Q<sub>α</sub>(ΣW<sup>CD</sup>) − Q<sub>0,5</sub>(ΣW<sup>CD</sup>)}<br>Ganho = Σ<sub>pontos</sub> EM<sub>sozinho</sub> − EM<sup>CD</sup></div>
+      <dl class="kv">
+        <dt>Período de proteção</dt><dd>${diasTxt(e)}</dd>
+        <dt>Saída mediana da região</dt><dd>${fMil(e?e.med:null)}</dd>
+        <dt>Estoque mínimo concentrado</dt><dd>${fMil(e?e.em:null)}</dd>
+        <dt>Se cada ponto guardasse o seu</dt><dd>${fMil(e?e.sep:null)}</dd>
+        <dt>Ganho de centralização</dt><dd>${fMil(e?e.ganho:null)}${raw!==null&&e.sep>0?' ('+nf((e.ganho/e.sep)*100)+'%)':''}</dd>
+        <dt>Aproximação com ρ = ${nf(CFG.rho,2)}</dt><dd>${fMil(e?e.emRaw:null)} · ganho ${fMil(e?e.ganhoA:null)}</dd>
+        <dt>Ponto de pedido</dt><dd>${fMil(e?e.pp:null)}</dd>
+        <dt>Esta política usa</dt><dd>${usaTxt('CD')} (${fMil(emP)})</dd></dl></div>
+    <div class="sect"><span class="st">Lote de retirada e faixa de devolução</span>
+      <div class="formula sm">Q* = √(2 K<sup>BC</sup> W̄ ÷ h)<br>z − L = (3 K<sup>BC</sup> σ² ÷ 4h)<sup>1/3</sup>, H − L = 3(z − L)</div>
+      <dl class="kv"><dt>Consumo líquido médio W̄</dt><dd>${fMil(M.baumol.W)}/dia</dd><dt>Lote de Baumol Q*</dt><dd>${fMil(M.baumol.Q)}</dd><dt>z − L (Miller–Orr)</dt><dd>${fMil(M.baumol.MO)}</dd><dt>H − L</dt><dd>${fMil(3*M.baumol.MO)}</dd><dt>No período</dt><dd>${fMil(kk.bcTot)} da custódia · ${nf(kk.recirc*100)}% recirculado</dd></dl></div>
+    <div class="sect minichart"><span class="st">Demanda da região: previsão × real</span>
+      <div class="minileg"><span><span class="sw" style="background:var(--s1)"></span>P50 · faixas P25–P75 e P05–P95</span><span><span class="sw" style="background:var(--s2);border-radius:50%"></span>Real</span></div>
+      ${fanChart(n)}<span class="cap">Soma dos quantis dos ATMs: a faixa real da soma é mais estreita, e é ela que o estoque concentrado usa.</span></div>
+    <div class="sect minichart"><span class="st">Saldo de fim de dia</span>${saldoChart(n)}<span class="cap">Linha preta = estoque mínimo da política; tracejada = ponto de pedido. Triângulo verde = retirada; preto invertido = devolução.</span></div>`;
+  } else {
+    const s=S[n.id], real=realOf(n,d), ser=seriesFor(n)[d];
+    h+=`<dl class="kv">
+      <dt>Saldo início → fim</dt><dd>${fMil(s.ini[d])} → ${fMil(s.fim[d])}</dd>
+      ${n.tipo==='tes'?`<dt>Teto</dt><dd>${fMil(n.teto)}</dd><dt>Saída para ATMs internos</dt><dd>${fMil(s.go[d])}</dd><dt>Guichê: depósitos − saques</dt><dd>${fMil(s.gui[d]||0)}</dd>${s.na[d]>0.5?`<dt>Faltou no guichê</dt><dd style="color:var(--crit);font-weight:600">! ${fMil(s.na[d])}</dd>`:''}`:`<dt>Capacidade</dt><dd>${fMil(n.cap)}</dd><dt>Cobertura · folga</dt><dd>${nf(covDays(n,d),1)} d · ${folga(n,d)===null?'—':(folga(n,d)>=0?'+':'−')+nf(Math.abs(folga(n,d)),1)+' d'}</dd>`}
+      <dt>${n.tipo==='tes'?'Saques dos internos':'Saque real'}</dt><dd>${fMil(real)}${n.indisp&&n.indisp[d]?' <span class="tag">imputado</span>':''}</dd>
+      <dt>P50 (${UI.h} d antes)</dt><dd>${fMil(ser.q[.5])}</dd>
+      <dt>Faixa P05–P95</dt><dd>${nf(ser.q[.05])}–${nf(ser.q[.95])}</dd>
+      <dt>Erro</dt><dd>${fPct(ser.q[.5]?real/ser.q[.5]-1:null)}</dd>
+      ${n.tipo!=='tes'&&s.na[d]>0.5?`<dt>Não atendido</dt><dd style="color:var(--crit);font-weight:600">! ${fMil(s.na[d])}</dd>`:''}
+      ${s.exc[d]>0?`<dt>${n.tipo==='tes'?'Acima do teto':'Depósito recusado'}</dt><dd style="font-weight:600">▲ ${fMil(s.exc[d])}</dd>`:''}
+      <dt>Custo no período</dt><dd>${fR((DATA.custos[UI.pol].ponto||{})[n.id]||0)} <span style="color:var(--muted)">${DATA.custos.P4?'(oráculo '+fR((DATA.custos.P4.ponto||{})[n.id]||0)+')':''}</span></dd></dl>`;
+    const dec=[];
+    if(s.vC[d]&&(s.cheg[d]||0)>0&&n.tipo!=='int') dec.push('Convencional entregou '+fMil(s.cheg[d]));
+    if(s.vE[d]) dec.push('Especial entregou '+fMil(s.cheg[d]));
+    if((s.rec[d]||0)>0) dec.push((n.tipo==='int'?'GO retirou ':'Recolhimento de ')+fMil(s.rec[d]));
+    if(n.tipo==='int'&&s.go[d]>0) dec.push('GO abasteceu '+fMil(s.go[d])+' ('+nf(n.theta)+' min)');
+    if(s.fila[d]&&!(s.go[d]>0)) dec.push('Ficou na fila do GO (limite de '+nf(CFG.Theta)+' min)');
+    const chg=changeOf(n.id,d);
+    h+=`<div class="sect"><span class="st">Decisão executada no dia</span><div class="decbox"><span>${dec.length?dec.map(esc).join('<br>'):'Nenhuma movimentação.'}</span>${chg?`<span class="chg">Δ ${esc(chg.cls)}</span><span>Plano anterior: ${esc(chg.plano)}</span><span style="color:var(--ink-2)">Motivo: ${esc(chg.mot)}</span>`:''}</div></div>`;
+    h+=`<div class="sect minichart"><span class="st">${n.tipo==='tes'?'Demanda dos ATMs internos':'Saques'}: previsão × real</span>
+      <div class="minileg"><span><span class="sw" style="background:var(--s1)"></span>P50 · faixas P25–P75 e P05–P95</span><span><span class="sw" style="background:var(--s2);border-radius:50%"></span>Real</span></div>
+      ${fanChart(n)}${n.tipo==='tes'?'<span class="cap">Soma dos quantis dos ATMs internos: superestima a faixa da soma.</span>':''}</div>`;
+    if(n.tipo==='tes'){
+      const e=emInfo(n.id,d), emP=emFor(UI.pol,n.id,d), ppP=(e?e.med:0)+(emP||0);
+      const st = s.fim[d]<(emP||0) ? '<span style="color:var(--crit);font-weight:600">! abaixo do estoque mínimo</span>' : s.fim[d]<ppP ? 'abaixo do ponto de pedido' : 'acima do ponto de pedido';
+      h+=`<div class="sect"><span class="st">Estoque de segurança</span>
+        <div class="formula sm">PP = Q<sub>0,5</sub>(Σ W) + EM; EM = max{R<sub>b</sub>; Q<sub>${nf(CFG.alfa*100)}%</sub>(ΣW) − Q<sub>0,5</sub>(ΣW)}<br>EM ≈ z · √((1−ρ)Σσ² + ρ(Σσ)²), ρ = ${nf(CFG.rho,2)}</div>
+        <dl class="kv"><dt>Período de proteção</dt><dd>${diasTxt(e)}</dd><dt>Saída mediana no período</dt><dd>${fMil(e?e.med:null)}</dd>
+          <dt>Estoque mínimo (trajetórias)</dt><dd>${fMil(e?e.em:null)}</dd><dt>Aproximação com ρ</dt><dd>${fMil(e?e.emRaw:null)}</dd>
+          <dt>Entre independência e soma</dt><dd>${fMil(e?e.emInd:null)} – ${fMil(e?e.emCom:null)}</dd>
+          <dt>Ponto de pedido (fórmula)</dt><dd>${fMil(e?e.pp:null)}${e&&e.pp>n.teto?'<br><span style="font-weight:600">▲ acima do teto: o cofre não comporta α = '+nf(CFG.alfa*100)+'%</span>':''}</dd>
+          <dt>Esta política usa</dt><dd>${usaTxt(n.id)} (${fMil(emP)})</dd><dt>Saldo de fim de dia</dt><dd>${st}</dd></dl></div>`;
+    }
+    h+=`<div class="sect minichart"><span class="st">Saldo de fim de dia</span>${saldoChart(n)}<span class="cap">${n.tipo==='tes'?'Linha preta = estoque mínimo da política; tracejada = ponto de pedido. ':''}Triângulo laranja = especial; cinza = convencional ou GO; círculo vermelho = ruptura.</span></div>`;
+  }
+  h+=`<div class="sect"><span class="st">Modelo que atua neste ponto</span><div class="model">${M_.v.map(v=>`<span>${v}</span>`).join('')}${M_.r.map(r=>`<span class="r">${r}</span>`).join('')}</div><span style="font-size:12.5px;color:var(--ink-2)">Custos: ${M_.c}</span></div>`;
+  el.innerHTML=h;
+}
+
+/* ================= Log de mudanças ================= */
+function renderLog(){
+  const fn=document.getElementById('f-node').checked, fd=document.getElementById('f-day').checked;
+  const sel=BY[UI.sel];
+  const rows=changesOf(UI.pol).filter(c=>(!fn||c.id===UI.sel||(sel&&sel.filhos&&sel.filhos.some(j=>j.id===c.id)))&&(!fd||c.d===UI.day));
+  document.getElementById('logcount').textContent = rows.length+' mudança'+(rows.length===1?'':'s')+' · '+POL[UI.pol].nome;
+  let t='<thead><tr><th>Dia</th><th>Ponto</th><th>Plano anterior</th><th>Decisão executada</th><th>Mudança</th><th>Motivo</th></tr></thead><tbody>';
+  if(!rows.length) t+=`<tr><td colspan="6" style="color:var(--muted)">Nenhuma mudança com estes filtros.</td></tr>`;
+  rows.forEach(c=>{ t+=`<tr class="click${c.id===UI.sel&&c.d===UI.day?' sel':''}" data-id="${c.id}" data-d="${c.d}" tabindex="0"><td class="mono">${lbl(c.d)}</td><td class="mono">${c.id}</td><td>${esc(c.plano)}</td><td>${esc(c.fin)}</td><td><span class="tag">${esc(c.cls)}</span></td><td>${esc(c.mot)}</td></tr>`; });
+  document.getElementById('logtable').innerHTML=t+'</tbody>';
+}
+
+/* ================= Comparação de políticas ================= */
+function renderPolTable(){
+  let t='<thead><tr><th>Política</th><th class="num">Custo total</th><th class="num">Custo do erro</th><th class="num">Nível de serviço</th><th class="num">Rupturas</th><th class="num">Abaixo do mínimo</th><th class="num">Saldo parado</th><th class="num">Especiais</th><th class="num">Da custódia</th><th class="num">Na central</th><th class="num">Mudanças</th><th class="num">Nervosismo</th></tr></thead><tbody>';
+  PKEYS.forEach(k=>{ const x=K[k], cp=(DATA.comparacao.por_politica||{})[k]||{};
+    t+=`<tr class="click${k===UI.pol?' sel':''}" data-pol="${k}" tabindex="0"><td><span class="mono">${k}</span> · ${esc(POL[k].nome)}<br><span style="color:var(--muted);font-size:12px">${esc(POL[k].desc)}</span></td><td class="num">${fR(x.total)}</td><td class="num">${k==='P4'||cp.custo_erro===undefined?'—':fR(cp.custo_erro)}</td><td class="num">${nf(x.fill*100,2)}%</td><td class="num">${x.rupt}</td><td class="num">${x.abaixoMin}</td><td class="num">${x.parado}</td><td class="num">${x.esp}</td><td class="num">${fMil(x.bcTot)}</td><td class="num">${nf(x.shZ*100)}%</td><td class="num">${x.chg}</td><td class="num">${x.nervosismo?nf(x.nervosismo.taxa*100)+'%':'—'}</td></tr>`; });
+  document.getElementById('poltable').innerHTML=t+'</tbody>';
+}
+
+/* ================= Painéis de análise ================= */
+const W2=520, H2=200, P2={l:56,r:12,t:14,b:26};
+function barras(cats,vals,cores,titulo,fmt=fR,fmtEixo=null){
+  // barras com eixo linear; com valores negativos, o zero vira marca e linha de base
+  const fe=fmtEixo||fmt, max=niceMax(Math.max(...vals.map(v=>Math.abs(v)),1)*1.05), mn=Math.min(0,...vals);
+  const lo = mn<0 ? -niceMax(-mn*1.05) : 0;
+  const ys=v=>P2.t+(H2-P2.t-P2.b)*(1-(v-lo)/(max-lo)), bw=(W2-P2.l-P2.r)/cats.length;
+  let g=`<svg viewBox="0 0 ${W2} ${H2}" role="img" aria-label="${esc(titulo)}">`;
+  (lo<0?[lo,0,max]:[0,max/2,max]).forEach(t=>{ const y=ys(t); g+=`<line x1="${P2.l}" x2="${W2-P2.r}" y1="${y}" y2="${y}" stroke="${t===0&&lo<0?'var(--muted)':'var(--line)'}"/><text x="${P2.l-6}" y="${y+3.5}" font-size="10" text-anchor="end" fill="var(--muted)" font-family="var(--font-mono)">${fe(t)}</text>`; });
+  cats.forEach((c,i)=>{ const v=vals[i], y0=ys(0), y1=ys(v); g+=`<rect x="${P2.l+i*bw+bw*0.15}" y="${Math.min(y0,y1)}" width="${bw*0.7}" height="${Math.max(1,Math.abs(y1-y0))}" rx="3" fill="${cores[i]||'var(--s1)'}"><title>${esc(c)}: ${fmt(v)}</title></rect><text x="${P2.l+i*bw+bw/2}" y="${H2-8}" font-size="10" text-anchor="middle" fill="var(--muted)">${esc(c)}</text>`; });
+  return `<div class="sect"><span class="st">${titulo}</span>`+g+'</svg></div>';
+}
+function linhas(series,titulo,fmtY=v=>nf(v),yMax=null,extra=''){
+  const all=series.flatMap(s=>s.v.filter(v=>v!==null&&v!==undefined));
+  const max=yMax||niceMax(Math.max(1e-9,...all)*1.05), ys=v=>P2.t+(H2-P2.t-P2.b)*(1-v/max);
+  const n=Math.max(...series.map(s=>s.v.length)), xx=i=>P2.l+(W2-P2.l-P2.r)*(n>1?i/(n-1):0.5);
+  let g=`<svg viewBox="0 0 ${W2} ${H2}" role="img" aria-label="${esc(titulo)}">`;
+  [0,max/2,max].forEach(t=>{ const y=ys(t); g+=`<line x1="${P2.l}" x2="${W2-P2.r}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${P2.l-6}" y="${y+3.5}" font-size="10" text-anchor="end" fill="var(--muted)" font-family="var(--font-mono)">${fmtY(t)}</text>`; });
+  series.forEach(s=>{ if(s.area){ const pts=s.v.map((v,i)=>xx(i)+','+ys(v||0)); g+=`<path d="M${xx(0)},${ys(0)} L${pts.join(' L')} L${xx(s.v.length-1)},${ys(0)} Z" fill="${s.cor}" opacity="0.18"/>`; }
+    let dpath='', on=false; s.v.forEach((v,i)=>{ if(v===null||v===undefined){ on=false; return; } dpath+=(on?' L':' M')+xx(i)+','+ys(v); on=true; });
+    g+=`<path d="${dpath}" fill="none" stroke="${s.cor}" stroke-width="${s.w||2}" ${s.dash?'stroke-dasharray="4 3"':''} stroke-linejoin="round"/>`; });
+  if(n===D) TICKS.forEach(d=>{ g+=`<text x="${xx(d)}" y="${H2-8}" font-size="10" text-anchor="${d===0?'start':d===D-1?'end':'middle'}" fill="var(--muted)">${lbl(d).slice(4)}</text>`; });
+  g+=extra;
+  const leg=series.map(s=>`<span><span class="sw" style="background:${s.cor}"></span>${esc(s.nome)}</span>`).join('');
+  return `<div class="sect"><span class="st">${titulo}</span><div class="minileg">${leg}</div>`+g+'</svg></div>';
+}
+function renderAnalises(){
+  const pk=UI.pol, k=K[pk], k4=K.P4;
+  // impacto do erro: cascata oráculo → política por componente
+  const cascata=document.getElementById('cascata');
+  if(k4 && pk!=='P4'){
+    const comps=[['conv','Conv.'],['esp','Esp.'],['go','GO'],['opor','Oport.'],['rupt','Rupt.'],['estouro','Estouro'],['num','Numer.']];
+    const dif=comps.map(([c])=>(k.comp[c]||0)-(k4.comp[c]||0));
+    cascata.innerHTML = barras(comps.map(c=>c[1]), dif, dif.map((v,i)=>['esp','rupt'].includes(comps[i][0])?'var(--dn2)':['opor','estouro'].includes(comps[i][0])?'var(--dp2)':'var(--muted)'), `Diferença para o oráculo por componente (R$) · ${POL[pk].nome}`, fR, v=>Math.abs(v)>=1000 ? nf(v/1000, Math.abs(v)<10000?1:0)+' mil' : nf(v));
+    document.getElementById('err-sub').textContent='vermelho = lado da falta; azul = lado do excesso';
+  } else { cascata.innerHTML='<span class="cap" style="font-size:13px;color:var(--muted)">'+(k4?'O oráculo é a referência: escolha outra política.':'P4 não rodou.')+'</span>'; document.getElementById('err-sub').textContent=''; }
+  const vss=M.VSS, evpi=M.EVPI;
+  document.getElementById('vss').innerHTML = [
+    ['VSS = custo(P1) − custo(P3)', vss===null||vss===undefined?'—':fR(vss), 'quanto os cenários economizam frente à mediana'],
+    ['EVPI = custo(P3) − custo(P4)', evpi===null||evpi===undefined?'—':fR(evpi), 'teto de ganho de uma previsão perfeita'],
+  ].map(([l,v,s])=>`<div class="tile"><span class="lab">${l}</span><span class="val">${v}</span><span class="sub">${s}</span></div>`).join('');
+  // pontos que mais custaram a mais
+  const tc=document.getElementById('topcost');
+  if(k4 && pk!=='P4'){
+    const cp=DATA.custos[pk].ponto, c4=DATA.custos.P4.ponto;
+    const ids=Object.keys(Object.assign({},cp,c4)).map(id=>[id,(cp[id]||0)-(c4[id]||0)]).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    tc.innerHTML='<thead><tr><th>Ponto</th><th class="num">Política</th><th class="num">Oráculo</th><th class="num">A mais</th></tr></thead><tbody>'+ids.map(([id,v])=>`<tr class="click" data-sel="${id}"><td class="mono">${id}</td><td class="num">${fR(cp[id]||0)}</td><td class="num">${fR(c4[id]||0)}</td><td class="num">${fR(v)}</td></tr>`).join('')+'</tbody>';
+  } else tc.innerHTML='';
+  // previsões
+  const PM=DATA.previsao||{}, T=PM.teste, C=PM.calibracao;
+  document.getElementById('prev-sub').textContent = T ? `teste: WQL ${nf(T.WQL,3)} · MASE ${nf(T.MASE,3)} · ${nf(T.n)} pares` : 'sem métricas';
+  if(T){
+    const cs=T.caudas.map(r=>'Q'+String(Math.round(r.nivel*100)).padStart(2,'0'));
+    document.getElementById('caudas').innerHTML = linhas([
+      {nome:'Nominal', v:T.caudas.map(r=>r.nominal*100), cor:'var(--muted)', dash:true},
+      {nome:'Teste', v:T.caudas.map(r=>r.empirica*100), cor:'var(--s1)'},
+      ...(C?[{nome:'Calibração', v:C.caudas.map(r=>r.empirica*100), cor:'var(--s4)'}]:[])
+    ], 'Calibração por cauda: cobertura empírica (%) de '+cs.join(', '), v=>nf(v)+'%', 100,
+      cs.map((c,i)=>`<text x="${P2.l+(W2-P2.l-P2.r)*(i/(cs.length-1))}" y="${H2-8}" font-size="10" text-anchor="middle" fill="var(--muted)">${c}</text>`).join(''));
+    document.getElementById('pit').innerHTML = barras(T.pit.map((v,i)=>nf(i/10,1)), T.pit.map(v=>v*100), T.pit.map(()=>'var(--s1)'), 'Histograma do PIT no teste (% por faixa; plano = calibrado)', v=>nf(v)+'%');
+    document.getElementById('porh').innerHTML = linhas([{nome:'WQL teste', v:T.por_h.map(r=>r.WQL), cor:'var(--s1)'}, ...(C?[{nome:'WQL calibração', v:C.por_h.map(r=>r.WQL), cor:'var(--s4)'}]:[])], 'Erro por antecedência (h = 1 … '+T.por_h.length+')', v=>nf(v,2));
+    const linhasT=Object.entries(PM).map(([nome,x])=>`<tr><td>${esc(nome)}</td><td class="num">${nf(x.WQL,3)}</td><td class="num">${nf(x.MASE,3)}</td><td class="num">${fPct(x.vies,1)}</td><td class="num">${nf(x.cob80*100,1)}%</td><td class="num">${nf(x.cob90*100,1)}%</td><td class="num">${x.fer===null||x.fer===undefined?'—':nf(x.fer,3)+' / '+nf(x.comum,3)}</td></tr>`).join('');
+    document.getElementById('prevtab').innerHTML='<thead><tr><th>Janela</th><th class="num">WQL</th><th class="num">MASE</th><th class="num">Viés</th><th class="num">Cob. 80%</th><th class="num">Cob. 90%</th><th class="num">WQL feriado / comum</th></tr></thead><tbody>'+linhasT+'</tbody>';
+  }
+  // rede e centralização
+  const S=S_OF(pk), z=S.CD.fim, t=Array.from({length:D},(_,d)=>sum(TES.map(x=>S[x.id].fim[d]))), a=Array.from({length:D},(_,d)=>sum(ATMS.map(x=>S[x.id].fim[d])));
+  document.getElementById('niveis').innerHTML = linhas([{nome:'Central', v:z, cor:'var(--s6)', area:true},{nome:'Agências', v:t, cor:'var(--s4)', area:true},{nome:'ATMs', v:a, cor:'var(--s1)', area:true}], 'Saldo de fim de dia por nível (R$ mil)');
+  const e=EMF.CD;
+  document.getElementById('ganho').innerHTML = linhas([{nome:'Cada ponto sozinho', v:e.sep, cor:'var(--muted)', dash:true},{nome:'Concentrado na central', v:e.sep.map((s,i)=>s===null||e.ganho[i]===null?null:s-e.ganho[i]), cor:'var(--s6)'},{nome:'Ganho', v:e.ganho, cor:'var(--s1)'}], 'Estoque de segurança: separado × concentrado (R$ mil)');
+  document.getElementById('custodia').innerHTML = linhas([{nome:'Retirada na custódia', v:S.CD.bc, cor:'var(--s6)'},{nome:'Recolhimento processado', v:S.CD.ret, cor:'var(--s4)'},{nome:'Devolução', v:S.CD.dev, cor:'var(--ink)'}], 'Custódia × numerário próprio (R$ mil por dia)');
+  // modelo
+  const mo=(DATA.modelo||{})[pk]; const ex=mo?mo.exec:[];
+  const milp=ex.filter(x=>x.status!=='regra');
+  document.getElementById('mod-sub').textContent = milp.length ? `${milp.filter(x=>x.status==='Optimal').length}/${milp.length} noites ótimas · média ${nf(sum(milp.map(x=>x.seg))/milp.length,1)} s` : 'política por regra (sem solver)';
+  document.getElementById('solver').innerHTML = milp.length ? linhas([{nome:'Tempo (s)', v:Array.from({length:D},(_,d)=>{ const x=ex.find(y=>y.d===d); return x?x.seg:null; }), cor:'var(--s1)'},{nome:'Gap (×1000)', v:Array.from({length:D},(_,d)=>{ const x=ex.find(y=>y.d===d); return x&&x.gap!==null?x.gap*1000:null; }), cor:'var(--s2)'}], 'Solver por noite') : '';
+  if(mo){ const S5=S_OF(pk);
+    const fila = TES.map(x=>Array.from({length:D},(_,d)=>isGO(d)? (x.filhos.some(j=>S5[j.id].fila[d])?1:0) : null));
+    document.getElementById('r5').innerHTML = faixa(TES.map(x=>x.id), TES.map(x=>mo.r5_ativa[x.id]), 'GO no limite de minutos (R5 ativa) por agência e dia útil', 'var(--s2)')
+      + faixa(TES.map(x=>x.id), fila, 'ATMs internos na fila do GO', 'var(--crit)'); }
+  // conferências
+  document.getElementById('conf').innerHTML='<tbody>'+(DATA.conferencias||[]).map(c=>`<tr><td class="${c.ok?'ok':'nok'}">${c.ok?'✓':'✗'}</td><td>${esc(c.criterio)}<br><span style="color:var(--muted);font-size:12px">${esc(c.detalhe)}</span></td></tr>`).join('')+'</tbody>';
+  // sensibilidade
+  if(DATA.sensibilidade){ const s=DATA.sensibilidade, cols=Object.keys(s[0]); document.getElementById('sens-card').hidden=false;
+    document.getElementById('senstab').innerHTML='<thead><tr>'+cols.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr></thead><tbody>'+s.map(r=>'<tr>'+cols.map(c=>`<td class="${typeof r[c]==='number'?'num':''}">${typeof r[c]==='number'?nf(r[c],Math.abs(r[c])<10?3:0):esc(r[c])}</td>`).join('')+'</tr>').join('')+'</tbody>'; }
+}
+
+/* ================= Controles ================= */
+function seg(id,opts,key,name){
+  const el=document.getElementById(id);
+  el.innerHTML=opts.map(([v,l],i)=>`<input type="radio" name="${name}" id="${name}-${i}" value="${v}" ${String(UI[key])===String(v)?'checked':''}><label for="${name}-${i}">${l}</label>`).join('');
+  el.addEventListener('change',e=>{ UI[key]= key==='h'?Number(e.target.value):e.target.value; renderAll(); });
+}
+seg('pol',PKEYS.map(k=>[k,k+' '+POL[k].nome]),'pol','pol');
+seg('layer',[['saldo','Folga de saldo'],['erro','Erro de previsão'],['decisoes','Mudanças de decisão']],'layer','layer');
+seg('hor',[[1,'1 dia'],[2,'2 dias (prazo conv.)'],[3,'3 dias']],'h','hor');
+const dayEl=document.getElementById('day'); dayEl.max=D-1;
+const setDay=d=>{ UI.day=Math.max(0,Math.min(D-1,d)); dayEl.value=UI.day; renderAll(); };
+dayEl.addEventListener('input',()=>setDay(Number(dayEl.value)));
+document.getElementById('prev').onclick=()=>setDay(UI.day-1);
+document.getElementById('next').onclick=()=>setDay(UI.day+1);
+['f-node','f-day'].forEach(id=>document.getElementById(id).addEventListener('change',renderLog));
+svg.addEventListener('click',e=>{ const g=e.target.closest('.node'); if(g){ UI.sel=g.dataset.id; renderAll(); } });
+svg.addEventListener('keydown',e=>{ const g=e.target.closest('.node'); if(g&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); UI.sel=g.dataset.id; renderAll(); svg.querySelector(`[data-id="${CSS.escape(UI.sel)}"]`)?.focus(); } });
+document.getElementById('logtable').addEventListener('click',e=>{ const r=e.target.closest('tr[data-id]'); if(r){ UI.sel=r.dataset.id; setDay(Number(r.dataset.d)); } });
+document.getElementById('poltable').addEventListener('click',e=>{ const r=e.target.closest('tr[data-pol]'); if(r){ UI.pol=r.dataset.pol; document.querySelector(`#pol input[value="${UI.pol}"]`).checked=true; renderAll(); } });
+document.getElementById('topcost').addEventListener('click',e=>{ const r=e.target.closest('tr[data-sel]'); if(r&&BY[r.dataset.sel]){ UI.sel=r.dataset.sel; renderAll(); document.querySelector('.stage').scrollIntoView({behavior:'smooth'}); } });
+document.addEventListener('keydown',e=>{ if(e.target.closest('input,textarea,select')) return; if(e.key==='ArrowRight') setDay(UI.day+1); if(e.key==='ArrowLeft') setDay(UI.day-1); });
+const tip=document.getElementById('tip');
+function showTip(e,html){ tip.innerHTML=html; tip.hidden=false; const pad=14; let x=e.clientX+pad, y=e.clientY+pad; const r=tip.getBoundingClientRect(); if(x+r.width>innerWidth-8) x=e.clientX-r.width-pad; if(y+r.height>innerHeight-8) y=e.clientY-r.height-pad; tip.style.left=x+'px'; tip.style.top=y+'px'; }
+svg.addEventListener('mousemove',e=>{
+  const g=e.target.closest('.node'); if(!g){ tip.hidden=true; return; }
+  const n=BY[g.dataset.id], d=UI.day, S=S_OF(UI.pol);
+  if(n.tipo==='bc'){ const sc=S.CD; showTip(e,`<b>Custódia do BC (BB)</b><br>Retirada hoje: ${fMil(sc.bc[d]||0)}<br>Devolução hoje: ${fMil(sc.dev[d]||0)}`); return; }
+  if(n.tipo==='cd'){ const sc=S.CD, e2=emInfo('CD',d); showTip(e,`<b>Tesouraria central</b><br>Saldo fim: ${fMil(sc.fim[d])}<br>Despachou ${fMil(sc.desp[d]||0)} · voltou ${fMil(sc.ret[d]||0)}<br>Estoque mínimo ${fMil(emFor(UI.pol,'CD',d))} · ganho de centralização ${fMil(e2?e2.ganho:null)}`); return; }
+  const s=S[n.id]; let h=`<b>${esc(n.nome)}</b><br>Saldo fim: ${fMil(s.fim[d])}`;
+  if(n.tipo!=='tes') h+=`<br>Cobertura: ${nf(covDays(n,d),1)} d<br>Real ${nf(n.real[d])} · P50 ${nf(fq(n,UI.h,d,.5))} (${fPct(errPct(n,d))})`;
+  else h+=`<br>GO: ${nf(s.min[d])}/${nf(CFG.Theta)} min<br>Erro da demanda dos internos: ${fPct(errPct(n,d))}`;
+  const c=changeOf(n.id,d); if(c) h+=`<br>Δ ${esc(c.cls)}`;
+  showTip(e,h);
+});
+svg.addEventListener('mouseleave',()=>tip.hidden=true);
+document.getElementById('insp').addEventListener('mousemove',e=>{
+  const r=e.target.closest('rect[data-k]'); if(!r){ tip.hidden=true; return; }
+  const n=BY[UI.sel], d=Number(r.dataset.d);
+  if(r.dataset.k==='fan'){ const s=seriesFor(n)[d]; showTip(e,`<b>${lbl(d)}</b><br>Real ${nf(s.real)}<br>P50 ${nf(s.q[.5])} · P05–P95 ${nf(s.q[.05])}–${nf(s.q[.95])}<br>Erro ${fPct(s.q[.5]?s.real/s.q[.5]-1:null)}`); }
+  else { const s=n.tipo==='cd'?S_OF(UI.pol).CD:S_OF(UI.pol)[n.id]; showTip(e,`<b>${lbl(d)}</b><br>Saldo fim ${fMil(s.fim[d])}${s.na[d]>0.5?'<br>Não atendido '+fMil(s.na[d]):''}`); }
+});
+document.getElementById('insp').addEventListener('mouseleave',()=>tip.hidden=true);
+
+function renderAll(){
+  document.getElementById('daylbl').textContent=lbl(UI.day);
+  dayEl.value=UI.day;
+  renderMacro(); renderMap(); renderLegend(); renderInsp(); renderLog(); renderPolTable(); renderDayTable(); renderAnalises();
+}
+renderAll();
+</script>
+</body>
+</html>

@@ -218,3 +218,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ----------------------------------------------------------------------
+# Projeto numerário: saídas do notebook e caches (ficam no Drive / em saidas/)
+# ----------------------------------------------------------------------
+saidas/
+notebooks/nbrun/
+notebooks/saidas/
+poa_numerario/
+**/01_dados/raw/
+*.parquet
+*.pkl
+painel-numerario.html
+painel.html
+notebooks/*executado*.ipynb
