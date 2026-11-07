@@ -117,10 +117,18 @@ def consolidar(p, resultados: dict, k_ini: int, k_fim: int) -> dict:
     fer = p.cal.feriado
     mp = {"teste": metricas_previsao(conj, p.contexto, origens_teste, p.k_teste_fim, feriados=fer),
           "calibracao": metricas_previsao(conj, p.contexto, p.origens_calibracao, p.k_teste_ini - 1, feriados=fer)}
+    bruto = getattr(p, "previsoes_brutas", {}).get(cfg.previsao.modelo)
+    if bruto is not None:
+        # mesma previsão antes da recalibração: o ganho honesto é o do teste
+        # (na calibração o mapa é ajustado nos próprios PITs)
+        mp["teste_sem_recalibracao"] = metricas_previsao(bruto, p.contexto, origens_teste, p.k_teste_fim, feriados=fer)
+        mp["calibracao_sem_recalibracao"] = metricas_previsao(bruto, p.contexto, p.origens_calibracao,
+                                                              p.k_teste_ini - 1, feriados=fer)
     for outro, cj in p.previsoes.items():
         if outro != cfg.previsao.modelo:
             mp[f"teste_{outro}"] = metricas_previsao(cj, p.contexto, origens_teste, p.k_teste_fim, feriados=fer)
-    return {"kpis": kp, "comparacao": comp, "mudancas": mud, "previsao": mp}
+    return {"kpis": kp, "comparacao": comp, "mudancas": mud, "previsao": mp,
+            "centralizacao": ganho_centralizacao_resumo(p, k_ini)}
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +241,32 @@ def _conferir_em(p, k: int) -> tuple[bool, str]:
     return maior < 1e-6, f"maior diferença {maior:.2e} R$ mil (noite {cal.data(k).date()})"
 
 
+def ganho_centralizacao_resumo(p, k: int) -> dict:
+    """Os três números do ganho de centralização que aparecem no notebook, no painel
+    e na conferência — medem coisas diferentes e não devem bater entre si:
+
+    - ``aprox_noite``: fórmula normal z√((1−ρ)Σσ² + ρ(Σσ)²), σ pelos quantis Q05/Q95,
+      numa noite só (a da conferência);
+    - ``traj_noite``: quantil α da soma nas 1.000 trajetórias da cópula, mesma noite
+      (é o que entra no estoque mínimo da central);
+    - ``traj_media_teste``: média de ``traj_noite`` em todas as noites do teste (o número
+      da seção 7 do notebook e do painel).
+    A aproximação normal ignora a assimetria das marginais (σ simétrico tirado de
+    Q05/Q95) e resume a dependência num ρ médio; não precisa coincidir com a versão
+    por trajetórias, que lê o quantil da soma diretamente."""
+    out = {"noite": str(p.cal.data(k).date())}
+    em = p.em.get(k)
+    if em is not None:
+        c = em["central"][0]
+        out["traj_noite"] = c.ganho_centralizacao
+        out["aprox_noite_tabela"] = c.ganho_aprox
+        out["total_separado_noite"] = c.total_separado
+    vals = [p.em[kk]["central"][0].ganho_centralizacao for kk in range(p.k_teste_ini, p.k_teste_fim + 1)
+            if kk in p.em and p.em[kk]["central"][0].ganho_centralizacao is not None]
+    out["traj_media_teste"] = float(np.mean(vals)) if vals else None
+    return out
+
+
 def _conferir_ganho(p, k: int) -> tuple[bool, str]:
     cal = p.cal
     z = z_alpha(p.cfg.es.alpha)
@@ -240,18 +274,29 @@ def _conferir_ganho(p, k: int) -> tuple[bool, str]:
     grupos = []
     for b in p.rede.tesourarias:
         sig = [_sigma_tab(p, j, k, y) for x in P if cal.go[x] for j in p.rede.internos[b] for y in range(x, cal.prox_go(x))]
-        grupos.append(np.array(sig))
+        grupos.append(np.array(sig, dtype=np.float64))
     for kk in p.rede.externos:
-        grupos.append(np.array([_sigma_tab(p, kk, k, x) for x in P]))
+        grupos.append(np.array([_sigma_tab(p, kk, k, x) for x in P], dtype=np.float64))
 
     def em(sig, rho):
         return z * np.sqrt((1 - rho) * (sig ** 2).sum() + rho * sig.sum() ** 2) if len(sig) else 0.0
     todos = np.concatenate([g for g in grupos if len(g)])
     rho = p.calc_em.rho
     g_rho = sum(em(g, rho) for g in grupos) - em(todos, rho)
-    g_1 = sum(em(g, 1.0) for g in grupos) - em(todos, 1.0)
-    ok = (g_rho > 0 if rho < 1 else True) and abs(g_1) < 1e-6
-    return ok, f"ganho com ρ = {rho:.2f}: R$ {g_rho:,.0f} mil; com ρ = 1: {g_1:.1e}"
+    sep_1 = sum(em(g, 1.0) for g in grupos)
+    g_1 = sep_1 - em(todos, 1.0)
+    # tolerância relativa ao total separado: com ρ = 1 o ganho é zero exato na
+    # aritmética, e o que sobra é arredondamento de float64 (~1e-15 do total)
+    tol = 1e-9 * max(1.0, abs(sep_1))
+    ok = (g_rho > 0 if rho < 1 else True) and abs(g_1) <= tol
+    r = ganho_centralizacao_resumo(p, k)
+
+    def _m(v):
+        return "—" if v is None else f"R$ {v:,.0f} mil"
+    det = (f"com ρ = 1: {g_1:.1e} (tolerância {tol:.0e}) · com ρ = {rho:.2f}, noite {r['noite']}: "
+           f"aproximação normal {_m(g_rho)}, trajetórias {_m(r.get('traj_noite'))} · "
+           f"média do teste (trajetórias, o número do painel): {_m(r.get('traj_media_teste'))}")
+    return ok, det
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +597,27 @@ def resumo_markdown(p, cons: dict, conf: list) -> str:
                    f"- Cobertura do intervalo de 80% = {_pct(mp['cobertura_80'])} · de 90% = {_pct(mp['cobertura_90'])}",
                    "- Cobertura por cauda: " + ", ".join(f"Q{int(round(r['nivel'] * 100)):02d} → {_pct(r['empirica'])}"
                                                        for r in mp["caudas"].to_dict(orient="records"))]
+    cen = cons.get("centralizacao") or {}
+    if cen.get("traj_media_teste") is not None:
+        linhas += ["", "## 3b. Ganho de centralização (estoque mínimo da central)", "",
+                   f"- **Média do teste, por trajetórias:** R$ {_br(cen['traj_media_teste'])} mil — é o número do painel"
+                   " e da seção 7 do notebook",
+                   f"- **Noite {cen['noite']}:** R$ {_br(cen.get('traj_noite'))} mil por trajetórias; "
+                   f"R$ {_br(cen.get('aprox_noite_tabela'))} mil pela aproximação normal (a da conferência)",
+                   "- Os números não precisam bater: a conferência usa uma noite só e a fórmula normal (σ simétrico"
+                   " dos quantis Q05/Q95, dependência resumida num ρ médio); o painel usa a média de todas as noites"
+                   " do teste e o quantil da soma nas trajetórias da cópula"]
+    rec = p.diagnosticos.get("recalibracao")
+    mb = cons["previsao"].get("teste_sem_recalibracao", {})
+    if rec and mb.get("n") and mp.get("n"):
+        cb = {r["nivel"]: r["empirica"] for r in mb["caudas"].to_dict(orient="records")}
+        cr = {r["nivel"]: r["empirica"] for r in mp["caudas"].to_dict(orient="records")}
+        linhas += ["", "## 3c. Recalibração quantílica (PIT da janela de calibração)", "",
+                   f"- Mapa τ → τ' por antecedência, ajustado em {rec['origens'][0]} a {rec['origens'][1]} (só calibração)",
+                   "- Cobertura no teste, sem → com recalibração: " + ", ".join(
+                       f"Q{int(round(t * 100)):02d} {_pct(cb[t])} → {_pct(cr[t])}" for t in sorted(cr)),
+                   f"- WQL no teste: {_br(mb['WQL'], 3)} → {_br(mp['WQL'], 3)}",
+                   "- Na janela de calibração a cobertura recalibrada é in-sample; a comparação honesta é a do teste"]
     linhas += ["", "## 4. Replanejamento", ""]
     for n, x in k.items():
         nv = x.get("nervosismo", {})
@@ -567,4 +633,5 @@ def resumo_markdown(p, cons: dict, conf: list) -> str:
 
 
 __all__ = ["tabelas_contrato", "gravar_tabelas", "consolidar", "conferencias", "json_painel",
+           "ganho_centralizacao_resumo",
            "json_estrito", "gravar_json", "escrever_painel", "resumo_markdown"]

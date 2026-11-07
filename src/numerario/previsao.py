@@ -158,6 +158,12 @@ class ConjuntoPrevisoes:
     H: int
     por_origem: dict[int, np.ndarray]
 
+    def __post_init__(self):
+        # O Chronos-2 devolve float32 (e o cache em Parquet preserva o tipo). Somas de
+        # centenas de σ em float32 erram na 4ª–5ª casa — foi o que derrubou a conferência
+        # do ganho de centralização com ρ = 1. Tudo a jusante trabalha em float64.
+        self.por_origem = {int(k): np.asarray(v, dtype=np.float64) for k, v in self.por_origem.items()}
+
     def quantis(self, origem_k: int) -> np.ndarray:
         return self.por_origem[origem_k]
 
@@ -203,8 +209,8 @@ class ConjuntoPrevisoes:
 
 
 def pos_processar(q: np.ndarray, nao_negativas: np.ndarray | None = None) -> np.ndarray:
-    """Quantis monotônicos e, nas séries de saque, sem valores negativos."""
-    q = np.sort(q, axis=-1)
+    """Quantis monotônicos (float64) e, nas séries de saque, sem valores negativos."""
+    q = np.sort(np.asarray(q, dtype=np.float64), axis=-1)
     if nao_negativas is not None:
         q[nao_negativas] = np.maximum(q[nao_negativas], 0.0)
     return q
@@ -240,6 +246,104 @@ def prever_origens(previsor: Previsor, contexto_total: pd.DataFrame, cal: Calend
     return ConjuntoPrevisoes(previsor.nome, series, niveis, H, {k: feitas[k] for k in sorted(feitas)})
 
 
+# ---------------------------------------------------------------------------
+# Recalibração quantílica pelos PITs da calibração
+# ---------------------------------------------------------------------------
+def grupo_serie(nome: str) -> str:
+    """Grupo de recalibração: saques de ATM, depósitos (G:) e guichê (F:) têm mapas próprios."""
+    return nome.split(":", 1)[0] if ":" in nome else "saque"
+
+
+@dataclass
+class Recalibracao:
+    """Mapa nível nominal τ → nível τ' do quantil bruto, por grupo e antecedência.
+
+    Recalibração por PIT (Kuleshov, Fenner e Ermon, 2018, adaptada a quantis):
+    se a previsão fosse calibrada, os PITs u = F̂(y) seriam uniformes. Com G a
+    distribuição empírica dos PITs da janela de calibração, o quantil
+    recalibrado de nível τ é o quantil bruto de nível τ' = G⁻¹(τ). Corrige as
+    duas caudas de forma independente (uma cauda fina em cima e larga embaixo
+    gera τ' > τ nos níveis altos e τ' ≈ τ nos baixos). O quantil bruto além de
+    0,01/0,99 vem da extrapolação de cauda de ``cenarios.avaliar_quantil``.
+    """
+
+    niveis: np.ndarray                    # (Q,) nominais
+    mapa: dict                            # grupo → (H, Q) níveis τ' do quantil bruto
+    n_pits: dict                          # grupo → (H,) PITs usados por antecedência
+    origens: tuple                        # (primeira, última) origem usada no ajuste
+
+    def aplicar(self, conj: "ConjuntoPrevisoes", nao_negativas: np.ndarray | None = None) -> "ConjuntoPrevisoes":
+        from .cenarios import avaliar_quantil
+
+        grupos = np.array([grupo_serie(s) for s in conj.series])
+        novo = {}
+        for k, q in conj.por_origem.items():
+            q2 = q.copy()
+            for g, tau in self.mapa.items():
+                m = grupos == g
+                if not m.any():
+                    continue
+                qg = q[m]                                             # (Sg, H, Q)
+                u = np.broadcast_to(tau.T[:, None, :], (tau.shape[1], qg.shape[0], qg.shape[1]))  # (Q, Sg, H)
+                val = avaliar_quantil(qg, self.niveis, u)              # (Q, Sg, H)
+                q2[m] = np.moveaxis(val, 0, -1)
+            novo[k] = pos_processar(q2, nao_negativas)
+        return ConjuntoPrevisoes(conj.modelo, list(conj.series), list(conj.niveis), conj.H, novo)
+
+    def resumo(self, grupo: str = "saque", niveis=(0.01, 0.05, 0.10, 0.50, 0.90, 0.95, 0.99)) -> dict:
+        """τ' médio sobre as antecedências, para os níveis de interesse (diagnóstico)."""
+        if grupo not in self.mapa:
+            return {}
+        tau = self.mapa[grupo].mean(axis=0)
+        return {f"q{int(round(t * 100)):02d}": float(tau[int(np.argmin(np.abs(self.niveis - t)))]) for t in niveis}
+
+
+def pits_previsao(conj: "ConjuntoPrevisoes", contexto: pd.DataFrame, origens: list[int], limite_k: int) -> np.ndarray:
+    """u = F̂(y) por (origem, série, h); NaN se o real não existe, é indisponível ou passa de ``limite_k``."""
+    from .cenarios import pit
+
+    vals = contexto[conj.series].values
+    U = np.full((len(origens), len(conj.series), conj.H), np.nan)
+    for i, k in enumerate(origens):
+        if k not in conj.por_origem:
+            continue
+        y = np.full((len(conj.series), conj.H), np.nan)
+        for h in range(1, conj.H + 1):
+            if k + h <= limite_k:
+                y[:, h - 1] = vals[k + h]
+        U[i] = pit(conj.quantis(k), conj.niveis, y)
+    return U
+
+
+def ajustar_recalibracao(conj: "ConjuntoPrevisoes", contexto: pd.DataFrame, origens: list[int], limite_k: int,
+                         min_pits: int = 200) -> Recalibracao:
+    """Estima τ' = G⁻¹(τ) por grupo e antecedência nas ``origens`` (só calibração).
+
+    Com menos de ``min_pits`` PITs numa antecedência, usa os PITs de todas as
+    antecedências do grupo (mapa único); grupo sem PITs suficientes fica sem
+    recalibração."""
+    niv = np.asarray(conj.niveis, dtype=float)
+    U = pits_previsao(conj, contexto, origens, limite_k)
+    grupos = np.array([grupo_serie(s) for s in conj.series])
+    mapa, n_pits = {}, {}
+    for g in dict.fromkeys(grupos):
+        Ug = U[:, grupos == g, :]                                  # (O, Sg, H)
+        todos = Ug[~np.isnan(Ug)]
+        if len(todos) < min_pits:
+            continue
+        tau_pool = np.quantile(todos, niv)
+        tau = np.empty((conj.H, len(niv)))
+        n = np.zeros(conj.H, dtype=int)
+        for h in range(conj.H):
+            u = Ug[:, :, h]
+            u = u[~np.isnan(u)]
+            n[h] = len(u)
+            tau[h] = np.quantile(u, niv) if len(u) >= min_pits else tau_pool
+        mapa[g] = np.maximum.accumulate(np.clip(tau, 1e-6, 1 - 1e-6), axis=1)   # monotônico em τ
+        n_pits[g] = n
+    return Recalibracao(niv, mapa, n_pits, (min(origens), max(origens)))
+
+
 def _gravar_atomico(df: pd.DataFrame, caminho: str) -> None:
     os.makedirs(os.path.dirname(caminho) or ".", exist_ok=True)
     tmp = caminho + ".tmp"
@@ -258,4 +362,5 @@ def criar_previsor(cfg: Config, cal: CalendarioOperacional, modelo: str | None =
 
 
 __all__ = ["Previsor", "SeasonalNaiveQuantilico", "Chronos2Previsor", "ConjuntoPrevisoes",
-           "prever_origens", "criar_previsor", "rotulos_quantis", "pos_processar"]
+           "prever_origens", "criar_previsor", "rotulos_quantis", "pos_processar", "Recalibracao",
+           "ajustar_recalibracao", "pits_previsao", "grupo_serie"]
