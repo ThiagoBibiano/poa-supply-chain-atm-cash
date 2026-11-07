@@ -196,7 +196,9 @@ class Previsao:
     contexto_max: int | None = None     # None = histórico inteiro (janela expansiva)
     # SeasonalNaive quantílico (fallback e variante "valor do Chronos em custo")
     snaive_semanas: int = 8             # semanas de resíduos para os quantis
-    recalibrar_quantis: bool = False    # recalibração por PIT (assimétrica por cauda)
+    # Recalibração por PIT na janela de calibração (as duas caudas, mapa por antecedência).
+    # Não entra na chave do cache das previsões brutas: ligar/desligar não refaz o Chronos-2.
+    recalibrar_quantis: bool = False
 
 
 # ---------------------------------------------------------------------------

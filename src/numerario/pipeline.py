@@ -26,7 +26,7 @@ from .config import Config
 from .dados import DadosProjeto, baixar_nn5, preparar_dados
 from .estoque_seguranca import CalculadoraEM, IndiceSeries, em_para_tabela, nome_deposito, nome_guiche, parametros_regiao
 from .politicas import ContextoNoite, criar_politica
-from .previsao import criar_previsor, prever_origens
+from .previsao import ajustar_recalibracao, criar_previsor, prever_origens
 from .rede import RedePiloto
 from .simulacao import ResultadoPolitica, rodar_politica
 
@@ -47,7 +47,9 @@ class Projeto:
     k_aq_ini: int
     k_teste_ini: int
     k_teste_fim: int
-    previsoes: dict = field(default_factory=dict)      # modelo → ConjuntoPrevisoes
+    previsoes: dict = field(default_factory=dict)      # modelo → ConjuntoPrevisoes (recalibradas, se ligado)
+    previsoes_brutas: dict = field(default_factory=dict)  # modelo → ConjuntoPrevisoes antes da recalibração
+    recalibracao: object | None = None                 # previsao.Recalibracao (None = desligada)
     dep: Dependencia | None = None
     calc_em: CalculadoraEM | None = None
     noites: dict = field(default_factory=dict)         # k → CenariosOrigem
@@ -133,8 +135,11 @@ def prever(p: Projeto, modelos: list[str] | None = None) -> dict:
     cfg = p.cfg
     modelos = modelos or [cfg.previsao.modelo]
     origens = sorted(set(p.origens_calibracao) | set(p.noites_simulacao))
+    # a chave ignora a recalibração (aplicada depois, em calibrar): ligar ou desligar
+    # não invalida o cache das previsões brutas
+    chave_prev = cfg.copia(**{"previsao.recalibrar_quantis": False}).hash("previsao")
     for m in modelos:
-        chave = cfg.hash("previsao") + "_" + p.dados.hash()
+        chave = chave_prev + "_" + p.dados.hash()
         arq = p.caminho("02_previsoes", f"{m}__{chave}.parquet")
         aditivas = ~p.nao_negativas
         previsor = criar_previsor(cfg, p.cal, m, aditivas=aditivas)
@@ -142,6 +147,9 @@ def prever(p: Projeto, modelos: list[str] | None = None) -> dict:
         conj = prever_origens(previsor, p.contexto, p.cal, origens, cfg.previsao.horizonte, cfg.previsao.niveis,
                               caminho_cache=arq, nao_negativas=p.nao_negativas, log=p.log)
         p.previsoes[m] = conj
+        p.previsoes_brutas.pop(m, None)
+        if m == cfg.previsao.modelo:
+            p.recalibracao = None
         p.diagnosticos.setdefault("previsao", {})[m] = {
             "arquivo": arq, "origens": len(conj.por_origem), "segundos": round(time.time() - t0, 1),
             **(getattr(previsor, "info", {}) or {})}
@@ -174,6 +182,7 @@ def calibrar(p: Projeto, modelo: str | None = None) -> dict:
     cfg = p.cfg
     modelo = modelo or cfg.previsao.modelo
     limite = p.k_teste_ini - 1  # nada do teste
+    recalibrar(p, modelo)
     Z = pits(p, modelo, p.origens_calibracao, limite)
     p.dep = estimar_dependencia(Z, cfg.cenarios.shrinkage)
     W_bar, var_cd = parametros_regiao(p.dados.saques, cfg.datas.calibracao_fim, p.dados.guiche, p.dados.depositos)
@@ -187,6 +196,35 @@ def calibrar(p: Projeto, modelo: str | None = None) -> dict:
         "W_bar_regiao": W_bar, "var_diaria_regiao": var_cd, "Q_baumol": p.calc_em.Q_baumol,
         "miller_orr_z_menos_L": p.calc_em.mo_z_menos_L, "margem_p0": p.margem_p0}
     return p.diagnosticos["calibracao"]
+
+
+def recalibrar(p: Projeto, modelo: str | None = None) -> dict | None:
+    """Recalibra os quantis do modelo principal pelos PITs da janela de calibração.
+
+    Idempotente: parte sempre das previsões brutas. O mapa é estimado só com
+    alvos até a véspera do teste e aplicado a todas as origens (calibração,
+    aquecimento e teste). Os PITs da cópula e os cenários usam os quantis
+    recalibrados. Na janela de calibração a cobertura recalibrada é in-sample
+    (quase nominal por construção); a medida honesta é a do teste."""
+    cfg = p.cfg
+    modelo = modelo or cfg.previsao.modelo
+    bruto = p.previsoes_brutas.get(modelo, p.previsoes[modelo])
+    if not cfg.previsao.recalibrar_quantis:
+        p.previsoes[modelo] = bruto
+        p.previsoes_brutas.pop(modelo, None)
+        p.recalibracao = None
+        p.diagnosticos.pop("recalibracao", None)
+        return None
+    rec = ajustar_recalibracao(bruto, p.contexto, p.origens_calibracao, p.k_teste_ini - 1)
+    p.previsoes_brutas[modelo] = bruto
+    p.previsoes[modelo] = rec.aplicar(bruto, p.nao_negativas)
+    p.recalibracao = rec
+    p.diagnosticos["recalibracao"] = {
+        "modelo": modelo, "metodo": "PIT empírico por grupo e antecedência (τ' = G⁻¹(τ))",
+        "origens": [str(p.cal.data(rec.origens[0]).date()), str(p.cal.data(rec.origens[1]).date())],
+        "pits_por_grupo": {g: int(n.sum()) for g, n in rec.n_pits.items()},
+        "nivel_bruto_equivalente": {g: rec.resumo(g) for g in rec.mapa}}
+    return p.diagnosticos["recalibracao"]
 
 
 def _media_hist(p: Projeto, k: int, janela: int) -> dict:
@@ -361,5 +399,5 @@ def salvar_diagnosticos(p: Projeto) -> str:
     return gravar_json(p.diagnosticos, p.caminho("06_execucoes", "diagnosticos.json"), indent=1)
 
 
-__all__ = ["Projeto", "preparar", "prever", "calibrar", "montar_noites", "rodar", "pits", "sensibilidade",
+__all__ = ["Projeto", "preparar", "prever", "recalibrar", "calibrar", "montar_noites", "rodar", "pits", "sensibilidade",
            "tabela_estoque_minimo", "salvar_diagnosticos", "calibrar_margem_p0"]

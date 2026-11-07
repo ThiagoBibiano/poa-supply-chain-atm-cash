@@ -56,7 +56,7 @@ No teste de ponta a ponta (dados sintéticos, 30 cenários), 55 das 70 noites do
 
 ```bash
 pip install -e ".[dev]"            # acrescente ".[chronos]" para o Chronos-2
-pytest                              # 16 testes: calendário, dados, cenários, estoque de segurança, MILP, simulador e painel
+pytest                              # 19 testes: calendário, dados, cenários, recalibração, estoque de segurança, MILP, simulador e painel
 cd notebooks && POA_MODO=teste_local jupyter nbconvert --to notebook --execute \
     --ExecutePreprocessor.timeout=-1 --output executado.ipynb poa_numerario_colab.ipynb
 ```
